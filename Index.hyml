@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>X-ray Alignment Tool</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 10px; z-index: 10; font-size: 12px; }
+        #canvas-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { display: block; }
+        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #007AFF; color: #fff; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    mHKA: <span id="val-hka">-</span>° | LDFA: <span id="val-ldfa">-</span>° | MPTA: <span id="val-mpta">-</span>° | JLCA: <span id="val-jlca">-</span>°
+</div>
+
+<div id="canvas-container">
+    <canvas id="mainCanvas"></canvas>
+</div>
+
+<div class="controls">
+    <input type="file" id="upload" accept="image/*" style="display:none">
+    <button onclick="document.getElementById('upload').click()">画像を選択</button>
+</div>
+
+<script>
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    const upload = document.getElementById('upload');
+    let img = new Image();
+    
+    // 8つの初期点 (H, Kf, Kt, A, MF, LF, MT, LT)
+    let points = [
+        { x: 150, y: 100, label: 'H' }, { x: 150, y: 400, label: 'Kf' },
+        { x: 150, y: 430, label: 'Kt' }, { x: 150, y: 700, label: 'A' },
+        { x: 100, y: 410, label: 'MF' }, { x: 200, y: 410, label: 'LF' },
+        { x: 100, y: 420, label: 'MT' }, { x: 200, y: 420, label: 'LT' }
+    ];
+
+    let activePoint = null;
+
+    upload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            img.onload = () => {
+                resizeCanvas();
+                draw();
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (img.src) {
+            const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+        }
+        
+        // 補助線の描画
+        drawLine(points[0], points[1], 'red'); // Femur Axis
+        drawLine(points[2], points[3], 'blue'); // Tibia Axis
+        drawLine(points[4], points[5], 'yellow'); // Femur Joint Line
+        drawLine(points[6], points[7], 'green'); // Tibia Joint Line
+
+        points.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+            ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF0000';
+            ctx.fill();
+            ctx.fillStyle = "white";
+            ctx.fillText(p.label, p.x + 12, p.y + 12);
+        });
+        calculateAngles();
+    }
+
+    function drawLine(p1, p2, color) {
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // 角度計算ロジック
+    function calculateAngles() {
+        const getAngle = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+        
+        const femurAxis = getAngle(points[0], points[1]);
+        const tibiaAxis = getAngle(points[2], points[3]);
+        const femurJoint = getAngle(points[4], points[5]);
+        const tibiaJoint = getAngle(points[6], points[7]);
+
+        document.getElementById('val-hka').innerText = (180 - Math.abs(femurAxis - tibiaAxis)).toFixed(1);
+        document.getElementById('val-ldfa').innerText = Math.abs(90 - (femurAxis - femurJoint)).toFixed(1);
+        document.getElementById('val-mpta').innerText = Math.abs(90 - (tibiaAxis - tibiaJoint)).toFixed(1);
+        document.getElementById('val-jlca').innerText = Math.abs(femurJoint - tibiaJoint).toFixed(1);
+    }
+
+    // タッチイベント処理
+    canvas.addEventListener('touchstart', e => {
+        const touch = e.touches[0];
+        activePoint = points.find(p => Math.hypot(p.x - touch.clientX, p.y - touch.clientY) < 30);
+    });
+
+    canvas.addEventListener('touchmove', e => {
+        if (!activePoint) return;
+        const touch = e.touches[0];
+        // 指で隠れないように少し上にオフセット（任意）
+        activePoint.x = touch.clientX;
+        activePoint.y = touch.clientY - 20; 
+        draw();
+    });
+
+    canvas.addEventListener('touchend', () => { activePoint = null; });
+    window.onload = resizeCanvas;
+</script>
+</body>
+</html>

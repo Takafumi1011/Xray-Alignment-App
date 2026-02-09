@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Precision Tool</title>
+    <title>X-ray Alignment Tool Pro</title>
     <style>
-        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 15px; z-index: 10; font-size: 14px; display: flex; justify-content: space-around; }
-        .val { color: #007AFF; font-weight: bold; }
+        body { margin: 0; font-family: -apple-system, sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.85); padding: 12px 0; z-index: 100; font-size: 13px; display: flex; justify-content: space-around; border-bottom: 1px solid #333; }
+        .val { color: #007AFF; font-weight: bold; font-size: 15px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); }
-        button { padding: 12px 24px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .controls { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100; }
+        button { padding: 14px 28px; border-radius: 12px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
     </style>
 </head>
 <body>
@@ -37,26 +37,26 @@
     const ctx = canvas.getContext('2d');
     const upload = document.getElementById('upload');
     let img = new Image();
-    let scale = 1;
+    let imgScale = 1;
     let activePoint = null;
 
-    // 8つの参照点
+    // 整形外科的参照点 (H:股関節, Kf:大腿膝, Kt:脛骨膝, A:足関節, MF/LF/MT/LT:関節面)
     let points = [
-        { x: 200, y: 100, label: 'H' }, { x: 200, y: 400, label: 'Kf' },
-        { x: 200, y: 430, label: 'Kt' }, { x: 200, y: 750, label: 'A' },
-        { x: 140, y: 410, label: 'MF' }, { x: 260, y: 410, label: 'LF' },
-        { x: 140, y: 420, label: 'MT' }, { x: 260, y: 420, label: 'LT' }
+        { x: 200, y: 150, label: 'H' }, { x: 200, y: 400, label: 'Kf' },
+        { x: 200, y: 440, label: 'Kt' }, { x: 200, y: 700, label: 'A' },
+        { x: 150, y: 410, label: 'MF' }, { x: 250, y: 410, label: 'LF' },
+        { x: 150, y: 430, label: 'MT' }, { x: 250, y: 430, label: 'LT' }
     ];
 
     upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         const reader = new FileReader();
-        reader.onload = (event) => {
+        reader.onload = (f) => {
             img.onload = () => {
                 resizeCanvas();
                 draw();
             };
-            img.src = event.target.result;
+            img.src = f.target.result;
         };
         reader.readAsDataURL(file);
     });
@@ -69,30 +69,35 @@
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (img.src) {
-            scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-            ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
+            imgScale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            ctx.drawImage(img, 0, 0, img.width * imgScale, img.height * imgScale);
         }
         
-        // 軸の描画
-        drawLine(points[0], points[1], '#FF3B30'); // Femur
-        drawLine(points[2], points[3], '#5856D6'); // Tibia
-        drawLine(points[4], points[5], '#FFCC00'); // F-Joint
-        drawLine(points[6], points[7], '#34C759'); // T-Joint
+        // 各軸の描画
+        ctx.setLineDash([5, 5]);
+        drawLine(points[0], points[1], '#FF3B30'); // 大腿骨軸
+        drawLine(points[2], points[3], '#5856D6'); // 脛骨軸
+        drawLine(points[4], points[5], '#FFCC00'); // 大腿骨関節面
+        drawLine(points[6], points[7], '#34C759'); // 脛骨関節面
+        ctx.setLineDash([]);
 
+        // 参照点の描画
         points.forEach(p => {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF3B30';
             ctx.fill();
-            ctx.strokeStyle = "white";
+            ctx.strokeStyle = "#fff";
             ctx.lineWidth = 2;
             ctx.stroke();
-            ctx.fillStyle = "white";
-            ctx.font = "bold 12px sans-serif";
-            ctx.fillText(p.label, p.x + 12, p.y + 12);
+            ctx.fillStyle = "#fff";
+            ctx.fillText(p.label, p.x + 15, p.y + 15);
         });
 
-        if (activePoint) drawLoupe();
+        // 重要：ドラッグ中のみルーペを描画
+        if (activePoint) {
+            drawLoupe();
+        }
         calculateAngles();
     }
 
@@ -101,77 +106,91 @@
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.strokeStyle = color;
-        ctx.setLineDash([5, 5]);
+        ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.setLineDash([]);
     }
 
-    // 拡大ルーペ機能
+    // 改良版ルーペ機能
     function drawLoupe() {
-        const zoom = 2.5;
-        const size = 120;
-        const lx = 50; 
-        const ly = 100; // 指に隠れない位置に表示
+        const zoom = 3.0; // 拡大倍率
+        const size = 160; // ルーペの大きさ
+        const lx = 20;    // 表示位置（左）
+        const ly = 70;    // 表示位置（上、ヘッダーの下）
 
         ctx.save();
+        
+        // 丸いクリッピング領域の作成
         ctx.beginPath();
         ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI * 2);
         ctx.clip();
         
+        // 背景を黒で塗りつぶし
         ctx.fillStyle = "#000";
         ctx.fillRect(lx, ly, size, size);
         
+        // 拡大画像の描画
         if (img.src) {
-            ctx.drawImage(img, 
-                (activePoint.x / scale) - (size / (2 * zoom / scale)), 
-                (activePoint.y / scale) - (size / (2 * zoom / scale)), 
-                size / (zoom / scale), size / (zoom / scale),
-                lx, ly, size, size
-            );
+            const sW = size / (zoom / imgScale);
+            const sH = size / (zoom / imgScale);
+            const sX = (activePoint.x / imgScale) - (sW / 2);
+            const sY = (activePoint.y / imgScale) - (sH / 2);
+            
+            ctx.drawImage(img, sX, sY, sW, sH, lx, ly, size, size);
         }
 
-        // ルーペ内の照準
+        // 十字線の描画
         ctx.strokeStyle = "#00FF00";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(lx + size/2, ly); ctx.lineTo(lx + size/2, ly + size);
         ctx.moveTo(lx, ly + size/2); ctx.lineTo(lx + size, ly + size/2);
         ctx.stroke();
         
         ctx.restore();
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 3;
+
+        // 枠線の描画
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI * 2);
         ctx.stroke();
     }
 
     function calculateAngles() {
         const getAngle = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-        const fAxis = getAngle(points[0], points[1]);
-        const tAxis = getAngle(points[2], points[3]);
-        const fJoint = getAngle(points[4], points[5]);
-        const tJoint = getAngle(points[6], points[7]);
+        const fA = getAngle(points[0], points[1]);
+        const tA = getAngle(points[2], points[3]);
+        const fJ = getAngle(points[4], points[5]);
+        const tJ = getAngle(points[6], points[7]);
 
-        document.getElementById('val-hka').innerText = (180 - Math.abs(fAxis - tAxis)).toFixed(1);
-        document.getElementById('val-ldfa').innerText = Math.abs(90 - (fAxis - fJoint)).toFixed(1);
-        document.getElementById('val-mpta').innerText = Math.abs(90 - (tAxis - tJoint)).toFixed(1);
-        document.getElementById('val-jlca').innerText = Math.abs(fJoint - tJoint).toFixed(1);
+        document.getElementById('val-hka').innerText = (180 - Math.abs(fA - tA)).toFixed(1);
+        document.getElementById('val-ldfa').innerText = Math.abs(90 - (fA - fJ)).toFixed(1);
+        document.getElementById('val-mpta').innerText = Math.abs(90 - (tA - tJ)).toFixed(1);
+        document.getElementById('val-jlca').innerText = Math.abs(fJ - tJ).toFixed(1);
     }
 
+    // タッチ操作の改善
     canvas.addEventListener('touchstart', e => {
-        const touch = e.touches[0];
-        activePoint = points.find(p => Math.hypot(p.x - touch.clientX, p.y - touch.clientY) < 30);
+        const t = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const tx = t.clientX - rect.left;
+        const ty = t.clientY - rect.top;
+        activePoint = points.find(p => Math.hypot(p.x - tx, p.y - ty) < 40);
+        if(activePoint) draw();
     });
 
     canvas.addEventListener('touchmove', e => {
         if (!activePoint) return;
-        const touch = e.touches[0];
-        activePoint.x = touch.clientX;
-        activePoint.y = touch.clientY;
+        const t = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        activePoint.x = t.clientX - rect.left;
+        activePoint.y = t.clientY - rect.top;
         draw();
     });
 
     canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
     window.onload = resizeCanvas;
+    window.onresize = resizeCanvas;
 </script>
 </body>
 </html>

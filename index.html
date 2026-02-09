@@ -3,20 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Tool</title>
+    <title>X-ray Precision Tool</title>
     <style>
-        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.7); padding: 10px; z-index: 10; font-size: 12px; }
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 15px; z-index: 10; font-size: 14px; display: flex; justify-content: space-around; }
+        .val { color: #007AFF; font-weight: bold; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
-        button { padding: 10px 20px; border-radius: 5px; border: none; background: #007AFF; color: #fff; font-weight: bold; }
+        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); }
+        button { padding: 12px 24px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
 
 <div id="header">
-    mHKA: <span id="val-hka">-</span>° | LDFA: <span id="val-ldfa">-</span>° | MPTA: <span id="val-mpta">-</span>° | JLCA: <span id="val-jlca">-</span>°
+    <div>mHKA: <span id="val-hka" class="val">-</span>°</div>
+    <div>LDFA: <span id="val-ldfa" class="val">-</span>°</div>
+    <div>MPTA: <span id="val-mpta" class="val">-</span>°</div>
+    <div>JLCA: <span id="val-jlca" class="val">-</span>°</div>
 </div>
 
 <div id="canvas-container">
@@ -25,7 +29,7 @@
 
 <div class="controls">
     <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">画像を選択</button>
+    <button onclick="document.getElementById('upload').click()">レントゲン写真を選択</button>
 </div>
 
 <script>
@@ -33,16 +37,16 @@
     const ctx = canvas.getContext('2d');
     const upload = document.getElementById('upload');
     let img = new Image();
-    
-    // 8つの初期点 (H, Kf, Kt, A, MF, LF, MT, LT)
-    let points = [
-        { x: 150, y: 100, label: 'H' }, { x: 150, y: 400, label: 'Kf' },
-        { x: 150, y: 430, label: 'Kt' }, { x: 150, y: 700, label: 'A' },
-        { x: 100, y: 410, label: 'MF' }, { x: 200, y: 410, label: 'LF' },
-        { x: 100, y: 420, label: 'MT' }, { x: 200, y: 420, label: 'LT' }
-    ];
-
+    let scale = 1;
     let activePoint = null;
+
+    // 8つの参照点
+    let points = [
+        { x: 200, y: 100, label: 'H' }, { x: 200, y: 400, label: 'Kf' },
+        { x: 200, y: 430, label: 'Kt' }, { x: 200, y: 750, label: 'A' },
+        { x: 140, y: 410, label: 'MF' }, { x: 260, y: 410, label: 'LF' },
+        { x: 140, y: 420, label: 'MT' }, { x: 260, y: 420, label: 'LT' }
+    ];
 
     upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -65,24 +69,30 @@
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (img.src) {
-            const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+            scale = Math.min(canvas.width / img.width, canvas.height / img.height);
             ctx.drawImage(img, 0, 0, img.width * scale, img.height * scale);
         }
         
-        // 補助線の描画
-        drawLine(points[0], points[1], 'red'); // Femur Axis
-        drawLine(points[2], points[3], 'blue'); // Tibia Axis
-        drawLine(points[4], points[5], 'yellow'); // Femur Joint Line
-        drawLine(points[6], points[7], 'green'); // Tibia Joint Line
+        // 軸の描画
+        drawLine(points[0], points[1], '#FF3B30'); // Femur
+        drawLine(points[2], points[3], '#5856D6'); // Tibia
+        drawLine(points[4], points[5], '#FFCC00'); // F-Joint
+        drawLine(points[6], points[7], '#34C759'); // T-Joint
 
         points.forEach(p => {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
-            ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF0000';
+            ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF3B30';
             ctx.fill();
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 2;
+            ctx.stroke();
             ctx.fillStyle = "white";
+            ctx.font = "bold 12px sans-serif";
             ctx.fillText(p.label, p.x + 12, p.y + 12);
         });
+
+        if (activePoint) drawLoupe();
         calculateAngles();
     }
 
@@ -91,26 +101,62 @@
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // 拡大ルーペ機能
+    function drawLoupe() {
+        const zoom = 2.5;
+        const size = 120;
+        const lx = 50; 
+        const ly = 100; // 指に隠れない位置に表示
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI * 2);
+        ctx.clip();
+        
+        ctx.fillStyle = "#000";
+        ctx.fillRect(lx, ly, size, size);
+        
+        if (img.src) {
+            ctx.drawImage(img, 
+                (activePoint.x / scale) - (size / (2 * zoom / scale)), 
+                (activePoint.y / scale) - (size / (2 * zoom / scale)), 
+                size / (zoom / scale), size / (zoom / scale),
+                lx, ly, size, size
+            );
+        }
+
+        // ルーペ内の照準
+        ctx.strokeStyle = "#00FF00";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(lx + size/2, ly); ctx.lineTo(lx + size/2, ly + size);
+        ctx.moveTo(lx, ly + size/2); ctx.lineTo(lx + size, ly + size/2);
+        ctx.stroke();
+        
+        ctx.restore();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 3;
         ctx.stroke();
     }
 
-    // 角度計算ロジック
     function calculateAngles() {
         const getAngle = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-        
-        const femurAxis = getAngle(points[0], points[1]);
-        const tibiaAxis = getAngle(points[2], points[3]);
-        const femurJoint = getAngle(points[4], points[5]);
-        const tibiaJoint = getAngle(points[6], points[7]);
+        const fAxis = getAngle(points[0], points[1]);
+        const tAxis = getAngle(points[2], points[3]);
+        const fJoint = getAngle(points[4], points[5]);
+        const tJoint = getAngle(points[6], points[7]);
 
-        document.getElementById('val-hka').innerText = (180 - Math.abs(femurAxis - tibiaAxis)).toFixed(1);
-        document.getElementById('val-ldfa').innerText = Math.abs(90 - (femurAxis - femurJoint)).toFixed(1);
-        document.getElementById('val-mpta').innerText = Math.abs(90 - (tibiaAxis - tibiaJoint)).toFixed(1);
-        document.getElementById('val-jlca').innerText = Math.abs(femurJoint - tibiaJoint).toFixed(1);
+        document.getElementById('val-hka').innerText = (180 - Math.abs(fAxis - tAxis)).toFixed(1);
+        document.getElementById('val-ldfa').innerText = Math.abs(90 - (fAxis - fJoint)).toFixed(1);
+        document.getElementById('val-mpta').innerText = Math.abs(90 - (tAxis - tJoint)).toFixed(1);
+        document.getElementById('val-jlca').innerText = Math.abs(fJoint - tJoint).toFixed(1);
     }
 
-    // タッチイベント処理
     canvas.addEventListener('touchstart', e => {
         const touch = e.touches[0];
         activePoint = points.find(p => Math.hypot(p.x - touch.clientX, p.y - touch.clientY) < 30);
@@ -119,13 +165,12 @@
     canvas.addEventListener('touchmove', e => {
         if (!activePoint) return;
         const touch = e.touches[0];
-        // 指で隠れないように少し上にオフセット（任意）
         activePoint.x = touch.clientX;
-        activePoint.y = touch.clientY - 20; 
+        activePoint.y = touch.clientY;
         draw();
     });
 
-    canvas.addEventListener('touchend', () => { activePoint = null; });
+    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
     window.onload = resizeCanvas;
 </script>
 </body>

@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro v2</title>
+    <title>X-ray Precision Alignment Tool</title>
     <style>
         body { margin: 0; font-family: -apple-system, sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.85); padding: 12px 0; z-index: 100; font-size: 13px; display: flex; justify-content: space-around; border-bottom: 1px solid #333; }
         .val { color: #007AFF; font-weight: bold; font-size: 15px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100; }
-        button { padding: 14px 28px; border-radius: 12px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
+        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; text-align: center; }
+        button { padding: 12px 24px; border-radius: 12px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin: 5px; }
+        #guide { position: absolute; bottom: 90px; width: 100%; text-align: center; font-size: 12px; color: #aaa; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -23,13 +24,15 @@
     <div>JLCA: <span id="val-jlca" class="val">-</span>°</div>
 </div>
 
+<div id="guide">ポイントを掴むと拡大窓が出ます。離すと最適な位置に自動補正されます。</div>
+
 <div id="canvas-container">
     <canvas id="mainCanvas"></canvas>
 </div>
 
 <div class="controls">
     <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">レントゲン写真を選択</button>
+    <button onclick="document.getElementById('upload').click()">画像を読み込む</button>
 </div>
 
 <script>
@@ -39,19 +42,18 @@
     let img = new Image();
     let imgScale = 1;
     let activePoint = null;
+    let touchOffset = { x: 0, y: 0 };
 
-    // 参照点（画面サイズに合わせて後で初期化）
     let points = [];
 
     function initPoints() {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        // どんなスマホ画面でも必ず中央付近に並ぶように設定
         points = [
-            { x: w * 0.5, y: h * 0.15, label: 'H' },  // 股関節
-            { x: w * 0.5, y: h * 0.45, label: 'Kf' }, // 大腿骨膝中心
-            { x: w * 0.5, y: h * 0.50, label: 'Kt' }, // 脛骨膝中心
-            { x: w * 0.5, y: h * 0.80, label: 'A' },  // 足関節（必ず見える位置）
+            { x: w * 0.5, y: h * 0.15, label: 'H' }, 
+            { x: w * 0.5, y: h * 0.45, label: 'Kf' },
+            { x: w * 0.5, y: h * 0.50, label: 'Kt' },
+            { x: w * 0.5, y: h * 0.80, label: 'A' },
             { x: w * 0.35, y: h * 0.46, label: 'MF' }, { x: w * 0.65, y: h * 0.46, label: 'LF' },
             { x: w * 0.35, y: h * 0.49, label: 'MT' }, { x: w * 0.65, y: h * 0.49, label: 'LT' }
         ];
@@ -83,25 +85,22 @@
             ctx.drawImage(img, 0, 0, img.width * imgScale, img.height * imgScale);
         }
         
-        // 補助線
-        ctx.lineWidth = 1.5;
-        drawLine(points[0], points[1], '#FF3B30'); // 大腿軸
-        drawLine(points[2], points[3], '#5856D6'); // 脛骨軸
-        drawLine(points[4], points[5], '#FFCC00'); // 大腿関節面
-        drawLine(points[6], points[7], '#34C759'); // 脛骨関節面
+        ctx.lineWidth = 1.2;
+        drawLine(points[0], points[1], '#FF3B30'); 
+        drawLine(points[2], points[3], '#5856D6'); 
+        drawLine(points[4], points[5], '#FFCC00'); 
+        drawLine(points[6], points[7], '#34C759'); 
 
-        // 点の描画（サイズを6pxに固定）
         points.forEach(p => {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF3B30';
             ctx.fill();
             ctx.strokeStyle = "white";
-            ctx.lineWidth = 1.5;
             ctx.stroke();
             ctx.fillStyle = "white";
-            ctx.font = "bold 11px sans-serif";
-            ctx.fillText(p.label, p.x + 10, p.y + 10);
+            ctx.font = "10px sans-serif";
+            ctx.fillText(p.label, p.x + 8, p.y + 8);
         });
 
         if (activePoint) drawLoupe();
@@ -116,31 +115,28 @@
         ctx.stroke();
     }
 
-    // 改良版：周囲が見えるルーペ
     function drawLoupe() {
-        const zoom = 2.0;  // 2倍に抑えて周囲を把握しやすく
-        const size = 180;  // ルーペを大きく
-        const lx = 20;     // 左上固定
-        const ly = 70; 
+        const zoom = 2.5;
+        const size = 200; // 拡大窓を大きく
+        const lx = (window.innerWidth - size) / 2; // 中央上部に配置
+        const ly = 60; 
 
         ctx.save();
         ctx.beginPath();
-        ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI * 2);
+        ctx.rect(lx, ly, size, size);
         ctx.clip();
-        ctx.fillStyle = "#222";
+        ctx.fillStyle = "#111";
         ctx.fillRect(lx, ly, size, size);
         
         if (img.src) {
-            // 表示されているキャンバス上の座標から逆算
-            const sourceW = size / zoom;
-            const sourceH = size / zoom;
-            const sourceX = (activePoint.x - sourceW / 2) / imgScale;
-            const sourceY = (activePoint.y - sourceH / 2) / imgScale;
-            
-            ctx.drawImage(img, sourceX, sourceY, sourceW / imgScale, sourceH / imgScale, lx, ly, size, size);
+            const sw = size / zoom;
+            const sh = size / zoom;
+            const sx = (activePoint.x - sw / 2) / imgScale;
+            const sy = (activePoint.y - sh / 2) / imgScale;
+            ctx.drawImage(img, sx, sy, sw / imgScale, sh / imgScale, lx, ly, size, size);
         }
 
-        // 照準（緑の十字）
+        // 拡大窓内の照準
         ctx.strokeStyle = "#00FF00";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -150,8 +146,42 @@
         ctx.restore();
         
         ctx.strokeStyle = "white";
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.strokeRect(lx, ly, size, size);
+    }
+
+    // インテリジェント・スナップ機能（周囲の最も白いピクセルを探す）
+    function snapToBone(point) {
+        if (!img.src) return;
+        const searchRange = 10; // 周囲10ピクセルを探索
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = img.width;
+        tempCanvas.height = img.height;
+        tempCtx.drawImage(img, 0, 0);
+
+        const ix = Math.round(point.x / imgScale);
+        const iy = Math.round(point.y / imgScale);
+        const imageData = tempCtx.getImageData(ix - searchRange, iy - searchRange, searchRange * 2, searchRange * 2);
+        const data = imageData.data;
+
+        let maxBrightness = -1;
+        let bestX = 0;
+        let bestY = 0;
+
+        for (let y = 0; y < searchRange * 2; y++) {
+            for (let x = 0; x < searchRange * 2; x++) {
+                const idx = (y * searchRange * 2 + x) * 4;
+                const brightness = data[idx] + data[idx+1] + data[idx+2];
+                if (brightness > maxBrightness) {
+                    maxBrightness = brightness;
+                    bestX = x - searchRange;
+                    bestY = y - searchRange;
+                }
+            }
+        }
+        point.x += bestX * imgScale;
+        point.y += bestY * imgScale;
     }
 
     function calculateAngles() {
@@ -167,26 +197,36 @@
         document.getElementById('val-jlca').innerText = Math.abs(fJ - tJ).toFixed(1);
     }
 
-    // タッチ制御
     canvas.addEventListener('touchstart', e => {
         e.preventDefault();
         const t = e.touches[0];
-        activePoint = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 40);
-        if(activePoint) draw();
+        const target = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 45);
+        if(target) {
+            activePoint = target;
+            // オフセット設定：指の40px上にポイントを配置
+            touchOffset.x = activePoint.x - t.clientX;
+            touchOffset.y = activePoint.y - t.clientY - 40; 
+            draw();
+        }
     }, {passive: false});
 
     canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         if (!activePoint) return;
         const t = e.touches[0];
-        activePoint.x = t.clientX;
-        activePoint.y = t.clientY;
+        // 微調整のため、移動量を少し抑える
+        activePoint.x = t.clientX + touchOffset.x;
+        activePoint.y = t.clientY + touchOffset.y;
         draw();
     }, {passive: false});
 
-    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
+    canvas.addEventListener('touchend', () => { 
+        if(activePoint) snapToBone(activePoint);
+        activePoint = null; 
+        draw(); 
+    });
+    
     window.onload = resizeCanvas;
-    window.onresize = resizeCanvas;
 </script>
 </body>
 </html>

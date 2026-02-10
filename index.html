@@ -3,28 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Precision Alignment Tool</title>
+    <title>Bilateral X-ray Alignment Tool</title>
     <style>
-        body { margin: 0; font-family: -apple-system, sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.85); padding: 12px 0; z-index: 100; font-size: 13px; display: flex; justify-content: space-around; border-bottom: 1px solid #333; }
-        .val { color: #007AFF; font-weight: bold; font-size: 15px; }
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 11px; border-bottom: 1px solid #444; }
+        .row { display: flex; justify-content: space-around; padding: 6px 0; border-bottom: 1px solid #222; }
+        .val { color: #007AFF; font-weight: bold; font-size: 13px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; text-align: center; }
-        button { padding: 12px 24px; border-radius: 12px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin: 5px; }
-        #guide { position: absolute; bottom: 90px; width: 100%; text-align: center; font-size: 12px; color: #aaa; pointer-events: none; }
+        .controls { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 10px; }
+        button { padding: 12px 18px; border-radius: 10px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 14px; }
+        .auto-btn { background: #34C759; }
     </style>
 </head>
 <body>
 
 <div id="header">
-    <div>mHKA: <span id="val-hka" class="val">-</span>°</div>
-    <div>LDFA: <span id="val-ldfa" class="val">-</span>°</div>
-    <div>MPTA: <span id="val-mpta" class="val">-</span>°</div>
-    <div>JLCA: <span id="val-jlca" class="val">-</span>°</div>
+    <div class="row">
+        <div>【右】 mHKA: <span id="r-hka" class="val">-</span>°</div>
+        <div>LDFA: <span id="r-ldfa" class="val">-</span>°</div>
+        <div>MPTA: <span id="r-mpta" class="val">-</span>°</div>
+        <div>JLCA: <span id="r-jlca" class="val">-</span>°</div>
+        <div>JLOA: <span id="r-jloa" class="val">-</span>°</div>
+    </div>
+    <div class="row">
+        <div>【左】 mHKA: <span id="l-hka" class="val">-</span>°</div>
+        <div>LDFA: <span id="l-ldfa" class="val">-</span>°</div>
+        <div>MPTA: <span id="l-mpta" class="val">-</span>°</div>
+        <div>JLCA: <span id="l-jlca" class="val">-</span>°</div>
+        <div>JLOA: <span id="l-jloa" class="val">-</span>°</div>
+    </div>
 </div>
-
-<div id="guide">ポイントを掴むと拡大窓が出ます。離すと最適な位置に自動補正されます。</div>
 
 <div id="canvas-container">
     <canvas id="mainCanvas"></canvas>
@@ -32,7 +41,8 @@
 
 <div class="controls">
     <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">画像を読み込む</button>
+    <button onclick="document.getElementById('upload').click()">画像選択</button>
+    <button class="auto-btn" onclick="autoDetect()">自動検索</button>
 </div>
 
 <script>
@@ -42,39 +52,35 @@
     let img = new Image();
     let imgScale = 1;
     let activePoint = null;
-    let touchOffset = { x: 0, y: 0 };
 
+    // 左右16点の初期配置
     let points = [];
-
     function initPoints() {
-        const w = window.innerWidth;
-        const h = window.innerHeight;
+        const w = window.innerWidth; const h = window.innerHeight;
+        const rX = w * 0.35, lX = w * 0.65;
         points = [
-            { x: w * 0.5, y: h * 0.15, label: 'H' }, 
-            { x: w * 0.5, y: h * 0.45, label: 'Kf' },
-            { x: w * 0.5, y: h * 0.50, label: 'Kt' },
-            { x: w * 0.5, y: h * 0.80, label: 'A' },
-            { x: w * 0.35, y: h * 0.46, label: 'MF' }, { x: w * 0.65, y: h * 0.46, label: 'LF' },
-            { x: w * 0.35, y: h * 0.49, label: 'MT' }, { x: w * 0.65, y: h * 0.49, label: 'LT' }
+            // 右脚
+            { x: rX, y: h*0.2, label: 'RH' }, { x: rX, y: h*0.45, label: 'RKf' },
+            { x: rX, y: h*0.5, label: 'RKt' }, { x: rX, y: h*0.8, label: 'RA' },
+            { x: rX-30, y: h*0.46, label: 'RMF' }, { x: rX+30, y: h*0.46, label: 'RLF' },
+            { x: rX-30, y: h*0.49, label: 'RMT' }, { x: rX+30, y: h*0.49, label: 'RLT' },
+            // 左脚
+            { x: lX, y: h*0.2, label: 'LH' }, { x: lX, y: h*0.45, label: 'LKf' },
+            { x: lX, y: h*0.5, label: 'LKt' }, { x: lX, y: h*0.8, label: 'LA' },
+            { x: lX-30, y: h*0.46, label: 'LMF' }, { x: lX+30, y: h*0.46, label: 'LLF' },
+            { x: lX-30, y: h*0.49, label: 'LMT' }, { x: lX+30, y: h*0.49, label: 'LLT' }
         ];
     }
 
     upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         const reader = new FileReader();
-        reader.onload = (f) => {
-            img.onload = () => {
-                resizeCanvas();
-                draw();
-            };
-            img.src = f.target.result;
-        };
+        reader.onload = (f) => { img.onload = () => { resizeCanvas(); draw(); }; img.src = f.target.result; };
         reader.readAsDataURL(file);
     });
 
     function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
         if (points.length === 0) initPoints();
     }
 
@@ -85,147 +91,116 @@
             ctx.drawImage(img, 0, 0, img.width * imgScale, img.height * imgScale);
         }
         
-        ctx.lineWidth = 1.2;
-        drawLine(points[0], points[1], '#FF3B30'); 
-        drawLine(points[2], points[3], '#5856D6'); 
-        drawLine(points[4], points[5], '#FFCC00'); 
-        drawLine(points[6], points[7], '#34C759'); 
+        // 線描画 (R=0-7, L=8-15)
+        [[0,8],[1,9]].forEach(s => {
+            const o = s[0] === 0 ? 0 : 8;
+            const side = s[0] === 0 ? 'r' : 'l';
+            ctx.lineWidth = 1;
+            drawLine(points[o+0], points[o+1], '#FF3B30'); // Femur
+            drawLine(points[o+2], points[o+3], '#5856D6'); // Tibia
+            drawLine(points[o+4], points[o+5], '#FFCC00'); // F-Joint
+            drawLine(points[o+6], points[o+7], '#34C759'); // T-Joint
+        });
 
         points.forEach(p => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF3B30';
             ctx.fill();
-            ctx.strokeStyle = "white";
-            ctx.stroke();
-            ctx.fillStyle = "white";
-            ctx.font = "10px sans-serif";
-            ctx.fillText(p.label, p.x + 8, p.y + 8);
+            ctx.fillStyle = "white"; ctx.font = "9px sans-serif";
+            ctx.fillText(p.label, p.x + 7, p.y + 7);
         });
 
         if (activePoint) drawLoupe();
-        calculateAngles();
+        calculateAll();
     }
 
     function drawLine(p1, p2, color) {
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = color;
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = color; ctx.stroke();
+    }
+
+    function calculateAll() {
+        const calc = (o, prefix) => {
+            const getA = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+            const fA = getA(points[o+0], points[o+1]); // Femur Axis
+            const tA = getA(points[o+2], points[o+3]); // Tibia Axis
+            const fJ = getA(points[o+4], points[o+5]); // Femur Joint
+            const tJ = getA(points[o+6], points[o+7]); // Tibia Joint
+
+            // 1. mHKA (0基準, 内反-, 外反+)
+            let hka = (prefix === 'r') ? (tA - fA) : (fA - tA);
+            document.getElementById(prefix+'-hka').innerText = hka.toFixed(1);
+
+            // 2. LDFA (90基準, 内反>90, 外反<90)
+            let ldfa = 90 + (fA - fJ);
+            document.getElementById(prefix+'-ldfa').innerText = ldfa.toFixed(1);
+
+            // 3. MPTA (90基準, 内反<90, 外反>90)
+            let mpta = 90 - (tA - tJ);
+            document.getElementById(prefix+'-mpta').innerText = mpta.toFixed(1);
+
+            // 4. JLCA (0基準, 外側オープン-, 内側オープン+)
+            let jlca = (prefix === 'r') ? (fJ - tJ) : (tJ - fJ);
+            document.getElementById(prefix+'-jlca').innerText = jlca.toFixed(1);
+
+            // 5. JLOA (水平0基準)
+            document.getElementById(prefix+'-jloa').innerText = Math.abs(fJ).toFixed(1);
+        };
+        calc(0, 'r'); calc(8, 'l');
     }
 
     function drawLoupe() {
-        const zoom = 2.5;
-        const size = 200; // 拡大窓を大きく
-        const lx = (window.innerWidth - size) / 2; // 中央上部に配置
-        const ly = 60; 
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(lx, ly, size, size);
-        ctx.clip();
-        ctx.fillStyle = "#111";
-        ctx.fillRect(lx, ly, size, size);
-        
+        const size = 160; const lx = (window.innerWidth - size)/2; const ly = 120;
+        ctx.save(); ctx.beginPath(); ctx.rect(lx, ly, size, size); ctx.clip();
+        ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
         if (img.src) {
-            const sw = size / zoom;
-            const sh = size / zoom;
-            const sx = (activePoint.x - sw / 2) / imgScale;
-            const sy = (activePoint.y - sh / 2) / imgScale;
-            ctx.drawImage(img, sx, sy, sw / imgScale, sh / imgScale, lx, ly, size, size);
+            const zoom = 2.5; const sw = size/zoom; const sh = size/zoom;
+            ctx.drawImage(img, (activePoint.x - sw/2)/imgScale, (activePoint.y - sh/2)/imgScale, sw/imgScale, sh/imgScale, lx, ly, size, size);
         }
-
-        // 拡大窓内の照準
-        ctx.strokeStyle = "#00FF00";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(lx + size/2, ly); ctx.lineTo(lx + size/2, ly + size);
-        ctx.moveTo(lx, ly + size/2); ctx.lineTo(lx + size, ly + size/2);
-        ctx.stroke();
+        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size);
+        ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
         ctx.restore();
-        
-        ctx.strokeStyle = "white";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, size, size);
+        ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(lx, ly, size, size);
     }
 
-    // インテリジェント・スナップ機能（周囲の最も白いピクセルを探す）
-    function snapToBone(point) {
+    // 簡易自動検出（輝度スキャン）
+    function autoDetect() {
         if (!img.src) return;
-        const searchRange = 10; // 周囲10ピクセルを探索
         const tempCanvas = document.createElement('canvas');
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
-        tempCtx.drawImage(img, 0, 0);
-
-        const ix = Math.round(point.x / imgScale);
-        const iy = Math.round(point.y / imgScale);
-        const imageData = tempCtx.getImageData(ix - searchRange, iy - searchRange, searchRange * 2, searchRange * 2);
-        const data = imageData.data;
-
-        let maxBrightness = -1;
-        let bestX = 0;
-        let bestY = 0;
-
-        for (let y = 0; y < searchRange * 2; y++) {
-            for (let x = 0; x < searchRange * 2; x++) {
-                const idx = (y * searchRange * 2 + x) * 4;
-                const brightness = data[idx] + data[idx+1] + data[idx+2];
-                if (brightness > maxBrightness) {
-                    maxBrightness = brightness;
-                    bestX = x - searchRange;
-                    bestY = y - searchRange;
-                }
+        const tCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = 100; tempCanvas.height = 100; // 縮小して高速スキャン
+        tCtx.drawImage(img, 0, 0, 100, 100);
+        const data = tCtx.getImageData(0, 0, 100, 100).data;
+        
+        // 骨の白さを検知して各ポイントを微調整（デモ版：垂直方向の重心へ）
+        points.forEach(p => {
+            const ix = Math.round(p.x / window.innerWidth * 100);
+            const iy = Math.round(p.y / window.innerHeight * 100);
+            let bestY = iy; let maxB = 0;
+            for(let dy=-5; dy<=5; dy++) {
+                const idx = ((iy+dy)*100 + ix) * 4;
+                const b = data[idx] + data[idx+1] + data[idx+2];
+                if(b > maxB) { maxB = b; bestY = iy+dy; }
             }
-        }
-        point.x += bestX * imgScale;
-        point.y += bestY * imgScale;
-    }
-
-    function calculateAngles() {
-        const getA = (a, b) => Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
-        const fA = getA(points[0], points[1]);
-        const tA = getA(points[2], points[3]);
-        const fJ = getA(points[4], points[5]);
-        const tJ = getA(points[6], points[7]);
-
-        document.getElementById('val-hka').innerText = (180 - Math.abs(fA - tA)).toFixed(1);
-        document.getElementById('val-ldfa').innerText = Math.abs(90 - (fA - fJ)).toFixed(1);
-        document.getElementById('val-mpta').innerText = Math.abs(90 - (tA - tJ)).toFixed(1);
-        document.getElementById('val-jlca').innerText = Math.abs(fJ - tJ).toFixed(1);
+            p.y = (bestY / 100) * window.innerHeight;
+        });
+        draw();
     }
 
     canvas.addEventListener('touchstart', e => {
-        e.preventDefault();
-        const t = e.touches[0];
-        const target = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 45);
-        if(target) {
-            activePoint = target;
-            // オフセット設定：指の40px上にポイントを配置
-            touchOffset.x = activePoint.x - t.clientX;
-            touchOffset.y = activePoint.y - t.clientY - 40; 
-            draw();
-        }
+        e.preventDefault(); const t = e.touches[0];
+        activePoint = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 35);
+        if(activePoint) draw();
     }, {passive: false});
 
     canvas.addEventListener('touchmove', e => {
-        e.preventDefault();
-        if (!activePoint) return;
-        const t = e.touches[0];
-        // 微調整のため、移動量を少し抑える
-        activePoint.x = t.clientX + touchOffset.x;
-        activePoint.y = t.clientY + touchOffset.y;
+        e.preventDefault(); if (!activePoint) return;
+        const t = e.touches[0]; activePoint.x = t.clientX; activePoint.y = t.clientY;
         draw();
     }, {passive: false});
 
-    canvas.addEventListener('touchend', () => { 
-        if(activePoint) snapToBone(activePoint);
-        activePoint = null; 
-        draw(); 
-    });
-    
+    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
     window.onload = resizeCanvas;
 </script>
 </body>

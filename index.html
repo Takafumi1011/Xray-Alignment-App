@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro</title>
+    <title>X-ray Alignment Pro v2</title>
     <style>
-        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.8); padding: 10px 0; z-index: 100; font-size: 12px; display: flex; justify-content: space-around; }
-        .val { color: #007AFF; font-weight: bold; }
+        body { margin: 0; font-family: -apple-system, sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.85); padding: 12px 0; z-index: 100; font-size: 13px; display: flex; justify-content: space-around; border-bottom: 1px solid #333; }
+        .val { color: #007AFF; font-weight: bold; font-size: 15px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; }
-        button { padding: 10px 20px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; }
+        .controls { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); z-index: 100; }
+        button { padding: 14px 28px; border-radius: 12px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
     </style>
 </head>
 <body>
@@ -29,7 +29,7 @@
 
 <div class="controls">
     <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">レントゲン選択</button>
+    <button onclick="document.getElementById('upload').click()">レントゲン写真を選択</button>
 </div>
 
 <script>
@@ -40,16 +40,22 @@
     let imgScale = 1;
     let activePoint = null;
 
-    // 点のサイズを小さく調整 (6px)
-    const DOT_SIZE = 6;
+    // 参照点（画面サイズに合わせて後で初期化）
+    let points = [];
 
-    // 参照点 (Aの位置を上に移動し、全体を中央寄りに配置)
-    let points = [
-        { x: 180, y: 120, label: 'H' },  { x: 180, y: 350, label: 'Kf' },
-        { x: 180, y: 380, label: 'Kt' }, { x: 180, y: 600, label: 'A' },
-        { x: 140, y: 360, label: 'MF' }, { x: 220, y: 360, label: 'LF' },
-        { x: 140, y: 370, label: 'MT' }, { x: 220, y: 370, label: 'LT' }
-    ];
+    function initPoints() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        // どんなスマホ画面でも必ず中央付近に並ぶように設定
+        points = [
+            { x: w * 0.5, y: h * 0.15, label: 'H' },  // 股関節
+            { x: w * 0.5, y: h * 0.45, label: 'Kf' }, // 大腿骨膝中心
+            { x: w * 0.5, y: h * 0.50, label: 'Kt' }, // 脛骨膝中心
+            { x: w * 0.5, y: h * 0.80, label: 'A' },  // 足関節（必ず見える位置）
+            { x: w * 0.35, y: h * 0.46, label: 'MF' }, { x: w * 0.65, y: h * 0.46, label: 'LF' },
+            { x: w * 0.35, y: h * 0.49, label: 'MT' }, { x: w * 0.65, y: h * 0.49, label: 'LT' }
+        ];
+    }
 
     upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -67,6 +73,7 @@
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        if (points.length === 0) initPoints();
     }
 
     function draw() {
@@ -76,30 +83,28 @@
             ctx.drawImage(img, 0, 0, img.width * imgScale, img.height * imgScale);
         }
         
-        // 補助線の描画
-        drawLine(points[0], points[1], '#FF3B30'); // Femur Axis
-        drawLine(points[2], points[3], '#5856D6'); // Tibia Axis
-        drawLine(points[4], points[5], '#FFCC00'); // F-Joint Line
-        drawLine(points[6], points[7], '#34C759'); // T-Joint Line
+        // 補助線
+        ctx.lineWidth = 1.5;
+        drawLine(points[0], points[1], '#FF3B30'); // 大腿軸
+        drawLine(points[2], points[3], '#5856D6'); // 脛骨軸
+        drawLine(points[4], points[5], '#FFCC00'); // 大腿関節面
+        drawLine(points[6], points[7], '#34C759'); // 脛骨関節面
 
-        // 点の描画
+        // 点の描画（サイズを6pxに固定）
         points.forEach(p => {
             ctx.beginPath();
-            ctx.arc(p.x, p.y, DOT_SIZE, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : '#FF3B30';
             ctx.fill();
             ctx.strokeStyle = "white";
-            ctx.lineWidth = 1;
+            ctx.lineWidth = 1.5;
             ctx.stroke();
             ctx.fillStyle = "white";
-            ctx.font = "10px sans-serif";
-            ctx.fillText(p.label, p.x + 8, p.y + 8);
+            ctx.font = "bold 11px sans-serif";
+            ctx.fillText(p.label, p.x + 10, p.y + 10);
         });
 
-        // ドラッグ中のみルーペを表示
-        if (activePoint) {
-            drawLoupe();
-        }
+        if (activePoint) drawLoupe();
         calculateAngles();
     }
 
@@ -108,31 +113,34 @@
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
         ctx.stroke();
     }
 
+    // 改良版：周囲が見えるルーペ
     function drawLoupe() {
-        const zoom = 3.0;
-        const size = 150; 
-        const lx = 10; 
-        const ly = 50; 
+        const zoom = 2.0;  // 2倍に抑えて周囲を把握しやすく
+        const size = 180;  // ルーペを大きく
+        const lx = 20;     // 左上固定
+        const ly = 70; 
 
         ctx.save();
         ctx.beginPath();
-        ctx.rect(lx, ly, size, size);
+        ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI * 2);
         ctx.clip();
-        ctx.fillStyle = "#000";
+        ctx.fillStyle = "#222";
         ctx.fillRect(lx, ly, size, size);
         
         if (img.src) {
-            const sw = size / (zoom / imgScale);
-            const sh = size / (zoom / imgScale);
-            const sx = (activePoint.x / imgScale) - (sw / 2);
-            const sy = (activePoint.y / imgScale) - (sh / 2);
-            ctx.drawImage(img, sx, sy, sw, sh, lx, ly, size, size);
+            // 表示されているキャンバス上の座標から逆算
+            const sourceW = size / zoom;
+            const sourceH = size / zoom;
+            const sourceX = (activePoint.x - sourceW / 2) / imgScale;
+            const sourceY = (activePoint.y - sourceH / 2) / imgScale;
+            
+            ctx.drawImage(img, sourceX, sourceY, sourceW / imgScale, sourceH / imgScale, lx, ly, size, size);
         }
 
+        // 照準（緑の十字）
         ctx.strokeStyle = "#00FF00";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -142,8 +150,8 @@
         ctx.restore();
         
         ctx.strokeStyle = "white";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(lx, ly, size, size);
+        ctx.lineWidth = 3;
+        ctx.stroke();
     }
 
     function calculateAngles() {
@@ -159,10 +167,11 @@
         document.getElementById('val-jlca').innerText = Math.abs(fJ - tJ).toFixed(1);
     }
 
+    // タッチ制御
     canvas.addEventListener('touchstart', e => {
         e.preventDefault();
         const t = e.touches[0];
-        activePoint = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 35);
+        activePoint = points.find(p => Math.hypot(p.x - t.clientX, p.y - t.clientY) < 40);
         if(activePoint) draw();
     }, {passive: false});
 
@@ -177,6 +186,7 @@
 
     canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
     window.onload = resizeCanvas;
+    window.onresize = resizeCanvas;
 </script>
 </body>
 </html>

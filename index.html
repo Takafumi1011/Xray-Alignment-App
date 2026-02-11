@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Tool V5</title>
+    <title>X-ray Alignment Pro V6</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -52,27 +52,23 @@
     let img = new Image();
     let imgLoaded = false;
 
-    // 画像座標系でのデータ
     let scale = 1, offsetX = 0, offsetY = 0;
     let points = []; 
     let activePoint = null;
-
-    // タッチ用
     let lastDist = 0, lastX = 0, lastY = 0;
 
     function initPoints() {
         if (!imgLoaded) return;
         const w = img.width, h = img.height;
         points = [
-            // 水平基準線 (0, 1)
+            // 水平基準線
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, 
             { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
-            // 右脚 (2-9)
+            // 右: 2-9, 左: 10-17
             { x: w * 0.3, y: h * 0.15, label: 'RH' }, { x: w * 0.3, y: h * 0.45, label: 'RKf' },
             { x: w * 0.3, y: h * 0.5, label: 'RKt' }, { x: w * 0.3, y: h * 0.85, label: 'RA' },
             { x: w * 0.25, y: h * 0.46, label: 'RMF' }, { x: w * 0.35, y: h * 0.46, label: 'RLF' },
             { x: w * 0.25, y: h * 0.49, label: 'RMT' }, { x: w * 0.35, y: h * 0.49, label: 'RLT' },
-            // 左脚 (10-17)
             { x: w * 0.7, y: h * 0.15, label: 'LH' }, { x: w * 0.7, y: h * 0.45, label: 'LKf' },
             { x: w * 0.7, y: h * 0.5, label: 'LKt' }, { x: w * 0.7, y: h * 0.85, label: 'LA' },
             { x: w * 0.65, y: h * 0.46, label: 'LMF' }, { x: w * 0.75, y: h * 0.46, label: 'LLF' },
@@ -89,8 +85,7 @@
                 scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height);
                 offsetX = (window.innerWidth - img.width * scale) / 2;
                 offsetY = (window.innerHeight - img.height * scale) / 2;
-                initPoints();
-                draw();
+                initPoints(); draw();
             };
             img.src = f.target.result;
         };
@@ -101,28 +96,24 @@
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (!imgLoaded) return;
-
-        ctx.translate(offsetX, offsetY);
-        ctx.scale(scale, scale);
+        ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0);
 
-        // 補助線の描画 (画像座標系)
-        ctx.lineWidth = 2 / scale;
-        drawLine(points[0], points[1], 'white'); // 水平基準
+        ctx.lineWidth = 3 / scale;
+        drawLine(points[0], points[1], 'white'); // 地面基準線
         [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
-            drawLine(points[o+0], points[o+1], '#FF3B30'); // Femur
-            drawLine(points[o+2], points[o+3], '#5856D6'); // Tibia
-            drawLine(points[o+4], points[o+5], '#FFCC00'); // F-Joint
-            drawLine(points[o+6], points[o+7], '#34C759'); // T-Joint
+            drawLine(points[o+0], points[o+1], '#FF3B30'); 
+            drawLine(points[o+2], points[o+3], '#5856D6'); 
+            drawLine(points[o+4], points[o+5], '#FFCC00'); 
+            drawLine(points[o+6], points[o+7], '#34C759'); 
         });
 
         points.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 8 / scale, 0, Math.PI*2);
+            ctx.beginPath(); ctx.arc(p.x, p.y, 10 / scale, 0, Math.PI*2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
             ctx.fill();
-            ctx.strokeStyle = "black"; ctx.lineWidth = 1/scale; ctx.stroke();
+            ctx.strokeStyle = "black"; ctx.lineWidth = 2/scale; ctx.stroke();
         });
-
         calculateAngles();
     }
 
@@ -136,28 +127,28 @@
         const refA = getA(points[0], points[1]);
 
         const calc = (o, side) => {
-            const fA = getA(points[o+0], points[o+1]); 
-            const tA = getA(points[o+2], points[o+3]); 
-            const fJ = getA(points[o+4], points[o+5]); 
-            const tJ = getA(points[o+6], points[o+7]);
+            const fA = getA(points[o+0], points[o+1]); // 大腿骨軸
+            const tA = getA(points[o+2], points[o+3]); // 脛骨軸
+            const fJ = getA(points[o+4], points[o+5]); // 大腿関節面
+            const tJ = getA(points[o+6], points[o+7]); // 脛骨関節面
 
-            // HKA: 0基準 (内反-, 外反+)
+            // mHKA: 内反-, 外反+
             let hka = (side === 'r') ? (tA - fA) : (fA - tA);
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA: 90基準 (内反>90, 外反<90)
+            // LDFA: 90基準, 内反>90, 外反<90
             let ldfa = 90 + (fA - fJ);
             document.getElementById(side+'-ldfa').innerText = ldfa.toFixed(1);
 
-            // MPTA: 90基準 (内反<90, 外反>90)
-            let mpta = 90 + (tA - tJ);
+            // MPTA: 90基準, 内反<90, 外反>90
+            let mpta = 90 - (tA - tJ);
             document.getElementById(side+'-mpta').innerText = mpta.toFixed(1);
 
-            // JLCA: 0基準 (内側オープン+, 外側オープン-)
+            // JLCA: 内側オープン+, 外側オープン-
             let jlca = (side === 'r') ? (fJ - tJ) : (tJ - fJ);
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
 
-            // JLOA: 外側オープン-, 内側オープン+
+            // JLOA: 水平基準, 内側オープン+, 外側オープン-
             let jloa = (side === 'r') ? (fJ - refA) : (refA - fJ);
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
@@ -166,32 +157,24 @@
 
     function autoDetect() {
         if (!imgLoaded) return;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 100; tempCanvas.height = 100;
-        const tCtx = tempCanvas.getContext('2d');
-        tCtx.drawImage(img, 0, 0, 100, 100);
+        const temp = document.createElement('canvas'); temp.width = 100; temp.height = 100;
+        const tCtx = temp.getContext('2d'); tCtx.drawImage(img, 0, 0, 100, 100);
         const data = tCtx.getImageData(0,0,100,100).data;
-
-        const findCentroid = (yMin, yMax, xMin, xMax) => {
-            let tX=0, tY=0, count=0;
-            for(let y=yMin; y<yMax; y++){
-                for(let x=xMin; x<xMax; x++){
-                    let idx = (y*100 + x)*4;
-                    if(data[idx]+data[idx+1]+data[idx+2] > 450){ tX+=x; tY+=y; count++; }
-                }
+        const scan = (y, xS, xE) => {
+            let tX=0, count=0;
+            for(let x=xS; x<xE; x++) {
+                let i = (y*100 + x)*4;
+                if(data[i]+data[i+1]+data[i+2] > 400) { tX += x; count++; }
             }
-            return count > 0 ? { x: (tX/count)/100 * img.width, y: (tY/count)/100 * img.height } : null;
+            return count > 0 ? (tX / count / 100 * img.width) : null;
         };
-
-        // 主要4点をスキャン（股関節・膝・足関節）
-        const rH = findCentroid(10, 30, 10, 50); if(rH) { points[2].x = rH.x; points[2].y = rH.y; }
-        const rK = findCentroid(40, 60, 10, 50); if(rK) { points[3].x = rK.x; points[3].y = rK.y; points[4].x = rK.x; points[4].y = rK.y + 30; }
-        const rA = findCentroid(70, 95, 10, 50); if(rA) { points[5].x = rA.x; points[5].y = rA.y; }
-        
-        const lH = findCentroid(10, 30, 50, 90); if(lH) { points[10].x = lH.x; points[10].y = lH.y; }
-        const lK = findCentroid(40, 60, 50, 90); if(lK) { points[11].x = lK.x; points[11].y = lK.y; points[12].x = lK.x; points[12].y = lK.y + 30; }
-        const lA = findCentroid(70, 95, 50, 90); if(lA) { points[13].x = lA.x; points[13].y = lA.y; }
-        
+        // 主要点の推定配置
+        const rH = scan(20, 10, 50); if(rH) points[2].x = rH;
+        const rK = scan(50, 10, 50); if(rK) { points[3].x = rK; points[4].x = rK; }
+        const rA = scan(85, 10, 50); if(rA) points[5].x = rA;
+        const lH = scan(20, 50, 90); if(lH) points[10].x = lH;
+        const lK = scan(50, 50, 90); if(lK) { points[11].x = lK; points[12].x = lK; }
+        const lA = scan(85, 50, 90); if(lA) points[13].x = lA;
         draw();
     }
 
@@ -201,8 +184,7 @@
             lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
         } else {
             const t = e.touches[0];
-            const wX = (t.clientX - offsetX) / scale;
-            const wY = (t.clientY - offsetY) / scale;
+            const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale;
             activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 30 / scale);
             lastX = t.clientX; lastY = t.clientY;
         }
@@ -213,19 +195,15 @@
         if (e.touches.length === 2) {
             const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
             const zoom = dist / lastDist;
-            const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2;
-            const midY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
-            offsetX = midX - (midX - offsetX) * zoom;
-            offsetY = midY - (midY - offsetY) * zoom;
+            const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2, midY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
+            offsetX = midX - (midX - offsetX) * zoom; offsetY = midY - (midY - offsetY) * zoom;
             scale *= zoom; lastDist = dist;
         } else if (activePoint) {
             const t = e.touches[0];
-            activePoint.x = (t.clientX - offsetX) / scale;
-            activePoint.y = (t.clientY - offsetY) / scale;
+            activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY - offsetY) / scale;
         } else {
             const t = e.touches[0];
-            offsetX += (t.clientX - lastX);
-            offsetY += (t.clientY - lastY);
+            offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY);
             lastX = t.clientX; lastY = t.clientY;
         }
         draw();

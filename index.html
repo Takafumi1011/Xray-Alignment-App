@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V6</title>
+    <title>X-ray Alignment Pro V7</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -13,7 +13,6 @@
         canvas { display: block; }
         .controls { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 8px; }
         button { padding: 10px 15px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 13px; }
-        .auto-btn { background: #34C759; }
     </style>
 </head>
 <body>
@@ -42,7 +41,6 @@
 <div class="controls">
     <input type="file" id="upload" accept="image/*" style="display:none">
     <button onclick="document.getElementById('upload').click()">画像読込</button>
-    <button class="auto-btn" onclick="autoDetect()">自動検索</button>
 </div>
 
 <script>
@@ -61,14 +59,14 @@
         if (!imgLoaded) return;
         const w = img.width, h = img.height;
         points = [
-            // 水平基準線
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, 
             { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
-            // 右: 2-9, 左: 10-17
+            // 右: 2-9
             { x: w * 0.3, y: h * 0.15, label: 'RH' }, { x: w * 0.3, y: h * 0.45, label: 'RKf' },
             { x: w * 0.3, y: h * 0.5, label: 'RKt' }, { x: w * 0.3, y: h * 0.85, label: 'RA' },
             { x: w * 0.25, y: h * 0.46, label: 'RMF' }, { x: w * 0.35, y: h * 0.46, label: 'RLF' },
             { x: w * 0.25, y: h * 0.49, label: 'RMT' }, { x: w * 0.35, y: h * 0.49, label: 'RLT' },
+            // 左: 10-17
             { x: w * 0.7, y: h * 0.15, label: 'LH' }, { x: w * 0.7, y: h * 0.45, label: 'LKf' },
             { x: w * 0.7, y: h * 0.5, label: 'LKt' }, { x: w * 0.7, y: h * 0.85, label: 'LA' },
             { x: w * 0.65, y: h * 0.46, label: 'LMF' }, { x: w * 0.75, y: h * 0.46, label: 'LLF' },
@@ -100,7 +98,7 @@
         ctx.drawImage(img, 0, 0);
 
         ctx.lineWidth = 3 / scale;
-        drawLine(points[0], points[1], 'white'); // 地面基準線
+        drawLine(points[0], points[1], 'white'); 
         [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
             drawLine(points[o+0], points[o+1], '#FF3B30'); 
             drawLine(points[o+2], points[o+3], '#5856D6'); 
@@ -109,15 +107,18 @@
         });
 
         points.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 10 / scale, 0, Math.PI*2);
+            ctx.beginPath(); ctx.arc(p.x, p.y, 8 / scale, 0, Math.PI*2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
             ctx.fill();
-            ctx.strokeStyle = "black"; ctx.lineWidth = 2/scale; ctx.stroke();
+            ctx.strokeStyle = "black"; ctx.lineWidth = 1/scale; ctx.stroke();
         });
+
+        if (activePoint) drawLoupe();
         calculateAngles();
     }
 
     function drawLine(p1, p2, color) {
+        if(!p1 || !p2) return;
         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
         ctx.strokeStyle = color; ctx.stroke();
     }
@@ -127,55 +128,62 @@
         const refA = getA(points[0], points[1]);
 
         const calc = (o, side) => {
-            const fA = getA(points[o+0], points[o+1]); // 大腿骨軸
-            const tA = getA(points[o+2], points[o+3]); // 脛骨軸
-            const fJ = getA(points[o+4], points[o+5]); // 大腿関節面
-            const tJ = getA(points[o+6], points[o+7]); // 脛骨関節面
+            const fA = getA(points[o+0], points[o+1]); 
+            const tA = getA(points[o+2], points[o+3]); 
+            const fJ = getA(points[o+4], points[o+5]); 
+            const tJ = getA(points[o+6], points[o+7]);
 
-            // mHKA: 内反-, 外反+
+            // HKA: 内反-, 外反+
             let hka = (side === 'r') ? (tA - fA) : (fA - tA);
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA: 90基準, 内反>90, 外反<90
-            let ldfa = 90 + (fA - fJ);
+            // LDFA: 90基準
+            let ldfa = 90 - (fA - fJ); 
             document.getElementById(side+'-ldfa').innerText = ldfa.toFixed(1);
 
-            // MPTA: 90基準, 内反<90, 外反>90
-            let mpta = 90 - (tA - tJ);
+            // MPTA: 90基準
+            let mpta = 90 + (tA - tJ);
             document.getElementById(side+'-mpta').innerText = mpta.toFixed(1);
 
-            // JLCA: 内側オープン+, 外側オープン-
-            let jlca = (side === 'r') ? (fJ - tJ) : (tJ - fJ);
+            // JLCA: 内側オープン+, 外側オープン- (反転修正)
+            let jlca = (side === 'r') ? (tJ - fJ) : (fJ - tJ);
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
 
-            // JLOA: 水平基準, 内側オープン+, 外側オープン-
-            let jloa = (side === 'r') ? (fJ - refA) : (refA - fJ);
+            // JLOA: 脛骨基準 (tJ), 内側オープン+, 外側オープン- (反転修正)
+            let jloa = (side === 'r') ? (refA - tJ) : (tJ - refA);
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
     }
 
-    function autoDetect() {
-        if (!imgLoaded) return;
-        const temp = document.createElement('canvas'); temp.width = 100; temp.height = 100;
-        const tCtx = temp.getContext('2d'); tCtx.drawImage(img, 0, 0, 100, 100);
-        const data = tCtx.getImageData(0,0,100,100).data;
-        const scan = (y, xS, xE) => {
-            let tX=0, count=0;
-            for(let x=xS; x<xE; x++) {
-                let i = (y*100 + x)*4;
-                if(data[i]+data[i+1]+data[i+2] > 400) { tX += x; count++; }
-            }
-            return count > 0 ? (tX / count / 100 * img.width) : null;
-        };
-        // 主要点の推定配置
-        const rH = scan(20, 10, 50); if(rH) points[2].x = rH;
-        const rK = scan(50, 10, 50); if(rK) { points[3].x = rK; points[4].x = rK; }
-        const rA = scan(85, 10, 50); if(rA) points[5].x = rA;
-        const lH = scan(20, 50, 90); if(lH) points[10].x = lH;
-        const lK = scan(50, 50, 90); if(lK) { points[11].x = lK; points[12].x = lK; }
-        const lA = scan(85, 50, 90); if(lA) points[13].x = lA;
-        draw();
+    function drawLoupe() {
+        const size = 180; 
+        const lx = (window.innerWidth - size) / 2;
+        const ly = 100;
+        
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0); 
+        ctx.beginPath(); ctx.rect(lx, ly, size, size); ctx.clip();
+        ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
+        
+        const zoom = 2.5;
+        const sw = size / zoom; const sh = size / zoom;
+        const sx = activePoint.x - (sw / (2 * scale));
+        const sy = activePoint.y - (sh / (2 * scale));
+        
+        ctx.drawImage(img, sx, sy, sw/scale, sh/scale, lx, ly, size, size);
+        
+        // 照準とラベル
+        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size);
+        ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
+        
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 16px sans-serif";
+        ctx.fillText(activePoint.label, lx + 10, ly + 25);
+        
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.strokeRect(lx, ly, size, size);
     }
 
     canvas.addEventListener('touchstart', e => {
@@ -185,7 +193,7 @@
         } else {
             const t = e.touches[0];
             const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale;
-            activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 30 / scale);
+            activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 35 / scale);
             lastX = t.clientX; lastY = t.clientY;
         }
     }, {passive: false});
@@ -209,7 +217,7 @@
         draw();
     }, {passive: false});
 
-    canvas.addEventListener('touchend', () => { activePoint = null; });
+    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
     window.onload = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
 </script>
 </body>

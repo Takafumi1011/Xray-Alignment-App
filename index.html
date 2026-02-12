@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V9</title>
+    <title>X-ray Alignment Pro V11</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -11,9 +11,10 @@
         .val { color: #007AFF; font-weight: bold; font-size: 12px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 8px; }
-        button { padding: 10px 15px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 13px; }
+        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 90%; }
+        button { padding: 10px 12px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 12px; }
         .auto-btn { background: #34C759; }
+        .save-btn { background: #FF9500; }
     </style>
 </head>
 <body>
@@ -43,6 +44,8 @@
     <input type="file" id="upload" accept="image/*" style="display:none">
     <button onclick="document.getElementById('upload').click()">画像読込</button>
     <button class="auto-btn" onclick="autoDetect()">自動検索</button>
+    <button class="save-btn" onclick="saveAsImage()">画像を保存</button>
+    <button class="save-btn" onclick="saveAsCSV()">CSV保存</button>
 </div>
 
 <script>
@@ -63,12 +66,10 @@
         points = [
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, 
             { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
-            // 右脚 (Medial is right of Lateral on screen)
             { x: w * 0.3, y: h * 0.15, label: 'RH' }, { x: w * 0.3, y: h * 0.45, label: 'RKf' },
             { x: w * 0.3, y: h * 0.5, label: 'RKt' }, { x: w * 0.3, y: h * 0.85, label: 'RA' },
             { x: w * 0.35, y: h * 0.46, label: 'RMF' }, { x: w * 0.25, y: h * 0.46, label: 'RLF' },
             { x: w * 0.35, y: h * 0.49, label: 'RMT' }, { x: w * 0.25, y: h * 0.49, label: 'RLT' },
-            // 左脚 (Medial is left of Lateral on screen)
             { x: w * 0.7, y: h * 0.15, label: 'LH' }, { x: w * 0.7, y: h * 0.45, label: 'LKf' },
             { x: w * 0.7, y: h * 0.5, label: 'LKt' }, { x: w * 0.7, y: h * 0.85, label: 'LA' },
             { x: w * 0.65, y: h * 0.46, label: 'LMF' }, { x: w * 0.75, y: h * 0.46, label: 'LLF' },
@@ -126,41 +127,24 @@
 
     function calculateAngles() {
         const getVAngle = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
-
         const calc = (o, side) => {
-            const fA = getVAngle(points[o+0], points[o+1]); // Femur Axis
-            const tA = getVAngle(points[o+2], points[o+3]); // Tibia Axis
-            
-            // Anatomically consistent joint vectors: Lateral to Medial
-            const fJ = (side === 'r') ? getVAngle(points[o+5], points[o+4]) : getVAngle(points[o+5], points[o+4]);
-            const tJ = (side === 'r') ? getVAngle(points[o+7], points[o+6]) : getVAngle(points[o+7], points[o+6]);
+            const fA = getVAngle(points[o+0], points[o+1]);
+            const tA = getVAngle(points[o+2], points[o+3]);
+            const fJ = getVAngle(points[o+5], points[o+4]);
+            const tJ = getVAngle(points[o+7], points[o+6]);
             const refA = getVAngle(points[0], points[1]);
-
-            // HKA: 内反-, 外反+
-            let hka = (side === 'r') ? (tA - fA) : (fA - tA);
-            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
-
-            // LDFA: Lateral side angle
-            let ldfa = (side === 'r') ? Math.abs(fA - fJ) : (180 - Math.abs(fA - fJ));
-            document.getElementById(side+'-ldfa').innerText = ldfa.toFixed(1);
-
-            // MPTA: Medial side angle
-            let mpta = (side === 'r') ? (180 - Math.abs(tA - tJ)) : Math.abs(tA - tJ);
-            document.getElementById(side+'-mpta').innerText = mpta.toFixed(1);
-
-            // JLCA: Medial open +, Lateral open -
-            let jlca = (side === 'r') ? (tJ - fJ) : (fJ - tJ);
-            document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
-
-            // JLOA: Based on Tibial Joint Line (tJ)
-            let jloa = (side === 'r') ? (tJ - refA) : (refA - tJ);
-            document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
+            document.getElementById(side+'-hka').innerText = ((side === 'r') ? (tA - fA) : (fA - tA)).toFixed(1);
+            document.getElementById(side+'-ldfa').innerText = ((side === 'r') ? Math.abs(fA - fJ) : (180 - Math.abs(fA - fJ))).toFixed(1);
+            document.getElementById(side+'-mpta').innerText = ((side === 'r') ? (180 - Math.abs(tA - tJ)) : Math.abs(tA - tJ)).toFixed(1);
+            document.getElementById(side+'-jlca').innerText = ((side === 'r') ? (tJ - fJ) : (fJ - tJ)).toFixed(1);
+            document.getElementById(side+'-jloa').innerText = ((side === 'r') ? (tJ - refA) : (refA - tJ)).toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
     }
 
     function drawLoupe() {
-        const size = 180; const lx = (window.innerWidth - size) / 2; const ly = 100;
+        const size = 180; let lx = (activePoint.label.startsWith('R')) ? 20 : (activePoint.label.startsWith('L') ? window.innerWidth - size - 20 : (window.innerWidth - size) / 2);
+        const ly = 100;
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.beginPath(); ctx.rect(lx, ly, size, size); ctx.clip();
         ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
@@ -173,6 +157,38 @@
         ctx.fillText(activePoint.label, lx + 10, ly + 25);
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.strokeRect(lx, ly, size, size);
+    }
+
+    // 保存機能
+    function saveAsImage() {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+        const tCtx = tempCanvas.getContext('2d');
+        tCtx.drawImage(canvas, 0, 0);
+        
+        tCtx.fillStyle = "rgba(0,0,0,0.7)";
+        tCtx.fillRect(0, 0, canvas.width, 60);
+        tCtx.fillStyle = "white"; tCtx.font = "bold 14px sans-serif";
+        const rData = `Right - HKA:${document.getElementById('r-hka').innerText} LDFA:${document.getElementById('r-ldfa').innerText} MPTA:${document.getElementById('r-mpta').innerText} JLCA:${document.getElementById('r-jlca').innerText} JLOA:${document.getElementById('r-jloa').innerText}`;
+        const lData = `Left  - HKA:${document.getElementById('l-hka').innerText} LDFA:${document.getElementById('l-ldfa').innerText} MPTA:${document.getElementById('l-mpta').innerText} JLCA:${document.getElementById('l-jlca').innerText} JLOA:${document.getElementById('l-jloa').innerText}`;
+        tCtx.fillText(rData, 10, 25); tCtx.fillText(lData, 10, 50);
+
+        const link = document.createElement('a');
+        link.download = `Xray-Alignment-${new Date().getTime()}.jpg`;
+        link.href = tempCanvas.toDataURL("image/jpeg", 0.9);
+        link.click();
+    }
+
+    function saveAsCSV() {
+        let csv = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
+        ['r','l'].forEach(side => {
+            csv += `${side === 'r' ? 'Right' : 'Left'},${document.getElementById(side+'-hka').innerText},${document.getElementById(side+'-ldfa').innerText},${document.getElementById(side+'-mpta').innerText},${document.getElementById(side+'-jlca').innerText},${document.getElementById(side+'-jloa').innerText}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const link = document.createElement('a');
+        link.download = `Xray-Data-${new Date().getTime()}.csv`;
+        link.href = window.URL.createObjectURL(blob);
+        link.click();
     }
 
     function autoDetect() {
@@ -201,32 +217,15 @@
 
     canvas.addEventListener('touchstart', e => {
         e.preventDefault();
-        if (e.touches.length === 2) {
-            lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-        } else {
-            const t = e.touches[0];
-            const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale;
-            activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 35 / scale);
-            lastX = t.clientX; lastY = t.clientY;
-        }
+        if (e.touches.length === 2) { lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); }
+        else { const t = e.touches[0]; const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale; activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 35 / scale); lastX = t.clientX; lastY = t.clientY; }
     }, {passive: false});
 
     canvas.addEventListener('touchmove', e => {
         e.preventDefault();
-        if (e.touches.length === 2) {
-            const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-            const zoom = dist / lastDist;
-            const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2, midY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
-            offsetX = midX - (midX - offsetX) * zoom; offsetY = midY - (midY - offsetY) * zoom;
-            scale *= zoom; lastDist = dist;
-        } else if (activePoint) {
-            const t = e.touches[0];
-            activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY - offsetY) / scale;
-        } else {
-            const t = e.touches[0];
-            offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY);
-            lastX = t.clientX; lastY = t.clientY;
-        }
+        if (e.touches.length === 2) { const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); const zoom = dist / lastDist; const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2, midY = (e.touches[0].pageY + e.touches[1].pageY) / 2; offsetX = midX - (midX - offsetX) * zoom; offsetY = midY - (midY - offsetY) * zoom; scale *= zoom; lastDist = dist; }
+        else if (activePoint) { const t = e.touches[0]; activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY - offsetY) / scale; }
+        else { const t = e.touches[0]; offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY); lastX = t.clientX; lastY = t.clientY; }
         draw();
     }, {passive: false});
 

@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V12</title>
+    <title>X-ray Alignment Pro V13</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
         .row { display: flex; justify-content: space-around; padding: 4px 0; border-bottom: 1px solid #222; }
-        .val { color: #007AFF; font-weight: bold; font-size: 11px; }
+        .val { color: #007AFF; font-weight: bold; font-size: 12px; }
         #canvas-container { position: relative; width: 100vw; height: 100vh; }
         canvas { display: block; }
         .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 95%; }
@@ -58,7 +58,7 @@
     let points = []; 
     let activePoint = null;
     let lastDist = 0, lastX = 0, lastY = 0;
-    let dragOffsetY = -40; // 指の40px上にポイントを表示
+    const dragOffsetY = -45;
 
     function initPoints() {
         if (!imgLoaded) return;
@@ -106,23 +106,35 @@
     function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
 
     function calculateAngles() {
-        const getDeg = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+        const getAng = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const radToDeg = (r) => r * 180 / Math.PI;
+
         const calc = (o, side) => {
-            const fA = getDeg(points[o+0], points[o+1]); const tA = getDeg(points[o+2], points[o+3]);
-            const fJ = getDeg(points[o+5], points[o+4]); const tJ = getDeg(points[o+7], points[o+6]);
-            const refA = getDeg(points[0], points[1]);
-            // mHKA
-            document.getElementById(side+'-hka').innerText = ((side === 'r') ? (tA - fA) : (fA - tA)).toFixed(1);
-            // LDFA (Lateral side angle)
-            let ldfa = (side === 'r') ? Math.abs(fA - fJ) : (180 - Math.abs(fA - fJ));
+            const axisF = getAng(points[o+0], points[o+1]);
+            const axisT = getAng(points[o+2], points[o+3]);
+            const jointF = getAng(points[o+5], points[o+4]); // Lateral to Medial
+            const jointT = getAng(points[o+7], points[o+6]); // Lateral to Medial
+            const ground = getAng(points[0], points[1]);
+
+            // HKA
+            const hka = (side === 'r') ? radToDeg(axisT - axisF) : radToDeg(axisF - axisT);
+            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
+
+            // LDFA (Lateral angle)
+            let ldfaRaw = (side === 'r') ? (axisF - jointF) : (jointF - axisF);
+            let ldfa = 90 - radToDeg(ldfaRaw);
             document.getElementById(side+'-ldfa').innerText = ldfa.toFixed(1);
-            // MPTA (Medial side angle)
-            let mpta = (side === 'r') ? (180 - Math.abs(tA - tJ)) : Math.abs(tA - tJ);
+
+            // MPTA (Medial angle)
+            let mptaRaw = (side === 'r') ? (jointT - axisT) : (axisT - jointT);
+            let mpta = 90 - radToDeg(mptaRaw);
             document.getElementById(side+'-mpta').innerText = mpta.toFixed(1);
+
             // JLCA & JLOA (Medial open +, Lateral open -)
-            let jlca = (side === 'r') ? (fJ - tJ) : (tJ - fJ);
+            const jlca = (side === 'r') ? radToDeg(jointT - jointF) : radToDeg(jointF - jointT);
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
-            let jloa = (side === 'r') ? (refA - tJ) : (tJ - refA);
+
+            const jloa = (side === 'r') ? radToDeg(jointT - ground) : radToDeg(ground - jointT);
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
@@ -130,11 +142,15 @@
 
     function drawLoupe() {
         const size = 200; 
-        const screenX = activePoint.x * scale + offsetX;
-        const screenY = activePoint.y * scale + offsetY;
-        let lx = (screenX < window.innerWidth / 2) ? window.innerWidth - size - 20 : 20;
-        let ly = (screenY < window.innerHeight / 2) ? window.innerHeight - size - 120 : 80;
+        const isRightLeg = activePoint.label.startsWith('R');
+        const isLeftLeg = activePoint.label.startsWith('L');
         
+        // 股関節調整時でも重ならないよう、位置を左右に逃がす
+        let lx = isRightLeg ? window.innerWidth - size - 20 : (isLeftLeg ? 20 : (window.innerWidth - size) / 2);
+        let ly = 80; // 基本は上部だが、股関節(H点)付近のときは下に逃がす
+        const screenY = activePoint.y * scale + offsetY;
+        if (screenY < 250) ly = window.innerHeight - size - 120;
+
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.beginPath(); ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI*2); ctx.clip();
         ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
@@ -142,7 +158,12 @@
         ctx.drawImage(img, activePoint.x - sw/2, activePoint.y - sw/2, sw, sw, lx, ly, size, size);
         ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 18px sans-serif"; ctx.fillText(activePoint.label, lx + 15, ly + 30);
+        
+        // ラベル表示（照準と重ならない位置）
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(activePoint.label, lx + size/2, ly + 30);
+        
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
     }
@@ -154,7 +175,7 @@
         tCtx.fillStyle = "white"; tCtx.font = "bold 14px sans-serif";
         tCtx.fillText("R-HKA:"+document.getElementById('r-hka').innerText+" LDFA:"+document.getElementById('r-ldfa').innerText+" MPTA:"+document.getElementById('r-mpta').innerText+" JLCA:"+document.getElementById('r-jlca').innerText+" JLOA:"+document.getElementById('r-jloa').innerText, 10, 30);
         tCtx.fillText("L-HKA:"+document.getElementById('l-hka').innerText+" LDFA:"+document.getElementById('l-ldfa').innerText+" MPTA:"+document.getElementById('l-mpta').innerText+" JLCA:"+document.getElementById('l-jlca').innerText+" JLOA:"+document.getElementById('l-jloa').innerText, 10, 55);
-        const a = document.createElement('a'); a.download = `Xray-Alignment-${Date.now()}.jpg`; a.href = temp.toDataURL("image/jpeg", 0.9); a.click();
+        const a = document.createElement('a'); a.download = `Xray-Align-${Date.now()}.jpg`; a.href = temp.toDataURL("image/jpeg", 0.9); a.click();
     }
 
     function saveAsCSV() {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V13</title>
+    <title>X-ray Alignment Pro V14</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -44,7 +44,7 @@
     <input type="file" id="upload" accept="image/*" style="display:none">
     <button onclick="document.getElementById('upload').click()">画像読込</button>
     <button class="auto-btn" onclick="autoDetect()">自動検索</button>
-    <button class="save-btn" onclick="saveAsImage()">画像を保存</button>
+    <button class="save-btn" onclick="saveAsImage()">画像保存</button>
     <button class="save-btn" onclick="saveAsCSV()">CSV保存</button>
 </div>
 
@@ -107,34 +107,33 @@
 
     function calculateAngles() {
         const getAng = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const radToDeg = (r) => r * 180 / Math.PI;
+        const toDeg = (r) => r * 180 / Math.PI;
 
         const calc = (o, side) => {
-            const axisF = getAng(points[o+0], points[o+1]);
-            const axisT = getAng(points[o+2], points[o+3]);
+            const axisF = getAng(points[o+0], points[o+1]); // Femur Axis
+            const axisT = getAng(points[o+2], points[o+3]); // Tibia Axis
             const jointF = getAng(points[o+5], points[o+4]); // Lateral to Medial
             const jointT = getAng(points[o+7], points[o+6]); // Lateral to Medial
             const ground = getAng(points[0], points[1]);
 
-            // HKA
-            const hka = (side === 'r') ? radToDeg(axisT - axisF) : radToDeg(axisF - axisT);
+            // HKA: Varus negative
+            const hka = (side === 'r') ? toDeg(axisT - axisF) : toDeg(axisF - axisT);
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA (Lateral angle)
-            let ldfaRaw = (side === 'r') ? (axisF - jointF) : (jointF - axisF);
-            let ldfa = 90 - radToDeg(ldfaRaw);
-            document.getElementById(side+'-ldfa').innerText = ldfa.toFixed(1);
+            // LDFA: 90 base. Varus Right: ~84. Correct sign logic.
+            let ldfaRaw = (side === 'r') ? toDeg(jointF - axisF) : toDeg(axisF - jointF);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
 
-            // MPTA (Medial angle)
-            let mptaRaw = (side === 'r') ? (jointT - axisT) : (axisT - jointT);
-            let mpta = 90 - radToDeg(mptaRaw);
-            document.getElementById(side+'-mpta').innerText = mpta.toFixed(1);
+            // MPTA: 90 base. Varus Right: ~79.
+            let mptaRaw = (side === 'r') ? toDeg(jointT - axisT) : toDeg(axisT - jointT);
+            document.getElementById(side+'-mpta').innerText = Math.abs(mptaRaw).toFixed(1);
 
-            // JLCA & JLOA (Medial open +, Lateral open -)
-            const jlca = (side === 'r') ? radToDeg(jointT - jointF) : radToDeg(jointF - jointT);
+            // JLCA: Medial open +, Lateral open -
+            const jlca = (side === 'r') ? toDeg(jointT - jointF) : toDeg(jointF - jointT);
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
 
-            const jloa = (side === 'r') ? radToDeg(jointT - ground) : radToDeg(ground - jointT);
+            // JLOA: Tibial joint line vs ground
+            const jloa = (side === 'r') ? toDeg(jointT - ground) : toDeg(ground - jointT);
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
@@ -143,13 +142,10 @@
     function drawLoupe() {
         const size = 200; 
         const isRightLeg = activePoint.label.startsWith('R');
-        const isLeftLeg = activePoint.label.startsWith('L');
-        
-        // 股関節調整時でも重ならないよう、位置を左右に逃がす
-        let lx = isRightLeg ? window.innerWidth - size - 20 : (isLeftLeg ? 20 : (window.innerWidth - size) / 2);
-        let ly = 80; // 基本は上部だが、股関節(H点)付近のときは下に逃がす
+        let lx = isRightLeg ? window.innerWidth - size - 20 : 20;
+        let ly = 80;
         const screenY = activePoint.y * scale + offsetY;
-        if (screenY < 250) ly = window.innerHeight - size - 120;
+        if (screenY < 300) ly = window.innerHeight - size - 120; // H点調整時は下に逃げる
 
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.beginPath(); ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI*2); ctx.clip();
@@ -159,11 +155,8 @@
         ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
         
-        // ラベル表示（照準と重ならない位置）
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 20px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + 30);
-        
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(activePoint.label, lx + size/2, ly + 35);
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
     }

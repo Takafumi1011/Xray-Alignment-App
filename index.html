@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V17</title>
+    <title>X-ray Alignment Pro V18</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -65,10 +65,12 @@
         const w = img.width, h = img.height;
         points = [
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
+            // 右脚 (LF:7, MF:6, LT:9, MT:8)
             { x: w * 0.35, y: h * 0.15, label: 'RH' }, { x: w * 0.35, y: h * 0.45, label: 'RKf' },
             { x: w * 0.35, y: h * 0.48, label: 'RKt' }, { x: w * 0.35, y: h * 0.85, label: 'RA' },
             { x: w * 0.40, y: h * 0.46, label: 'RMF' }, { x: w * 0.30, y: h * 0.46, label: 'RLF' },
             { x: w * 0.40, y: h * 0.47, label: 'RMT' }, { x: w * 0.30, y: h * 0.47, label: 'RLT' },
+            // 左脚 (LF:15, MF:14, LT:17, MT:16)
             { x: w * 0.65, y: h * 0.15, label: 'LH' }, { x: w * 0.65, y: h * 0.45, label: 'LKf' },
             { x: w * 0.65, y: h * 0.48, label: 'LKt' }, { x: w * 0.65, y: h * 0.85, label: 'LA' },
             { x: w * 0.60, y: h * 0.46, label: 'LMF' }, { x: w * 0.70, y: h * 0.46, label: 'LLF' },
@@ -107,37 +109,36 @@
 
     function calculateAngles() {
         const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const toDeg = (rad) => rad * 180 / Math.PI;
         const norm = (deg) => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
 
         const calc = (o, side) => {
-            const axisF = getRad(points[o+0], points[o+1]); // Femur Axis
-            const axisT = getRad(points[o+2], points[o+3]); // Tibia Axis
-            const jointF = getRad(points[o+5], points[o+4]); // Lateral to Medial
-            const jointT = getRad(points[o+7], points[o+6]); // Lateral to Medial
-            const ground = getRad(points[0], points[1]);
+            const axisF = getRad(points[o+0], points[o+1]) * 180 / Math.PI; // Hip to Knee
+            const axisT = getRad(points[o+3], points[o+2]) * 180 / Math.PI; // Ankle to Knee
+            
+            // Lateral to Medial vectors (based on side)
+            const jointF = (side === 'r') ? getRad(points[o+7], points[o+6]) * 180 / Math.PI : getRad(points[o+6], points[o+7]) * 180 / Math.PI;
+            const jointT = (side === 'r') ? getRad(points[o+9], points[o+8]) * 180 / Math.PI : getRad(points[o+8], points[o+9]) * 180 / Math.PI;
+            const ground = getRad(points[0], points[1]) * 180 / Math.PI;
 
-            // mHKA: Hip-Knee and Knee-Ankle axis
-            const kneeAnkle = getRad(points[o+1], points[o+3]);
-            let hka = norm(toDeg((side === 'r') ? (axisF - kneeAnkle) : (kneeAnkle - axisF)));
+            // mHKA: (Varus negative)
+            const axisA = getRad(points[o+1], points[o+3]) * 180 / Math.PI;
+            let hka = norm((side === 'r') ? (axisF - axisA) : (axisA - axisF));
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA: 90 base. Lateral side angle.
-            let ldfaRaw = norm(toDeg(axisF - jointF));
-            let ldfa = (side === 'r') ? (90 + ldfaRaw) : (90 - ldfaRaw);
+            // LDFA: Lateral Distal Femoral Angle (Outer angle)
+            let ldfa = 90 - norm(axisF - jointF);
             document.getElementById(side+'-ldfa').innerText = Math.abs(ldfa).toFixed(1);
 
-            // MPTA: 90 base. Medial side angle.
-            let mptaRaw = norm(toDeg(axisT - jointT));
-            let mpta = (side === 'r') ? (90 - mptaRaw) : (90 + mptaRaw);
+            // MPTA: Medial Proximal Tibial Angle (Inner angle)
+            let mpta = 90 - norm(axisT - jointT);
             document.getElementById(side+'-mpta').innerText = Math.abs(mpta).toFixed(1);
 
             // JLCA: Medial open +, Lateral open -
-            let jlca = norm(toDeg((side === 'r') ? (jointT - jointF) : (jointF - jointT)));
+            let jlca = norm((side === 'r') ? (jointT - jointF) : (jointF - jointT));
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
 
-            // JLOA: Tibial joint vs Ground
-            let jloa = norm(toDeg((side === 'r') ? (jointT - ground) : (ground - jointT)));
+            // JLOA: (Lateral lower +, Medial lower -)
+            let jloa = norm((side === 'r') ? (jointT - ground) : (ground - jointT));
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
@@ -158,10 +159,10 @@
         ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
         
-        // ラベル（最下部に固定・背景付きで視認性アップ）
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx + size/2 - 40, ly + size - 35, 80, 25);
+        // ラベル救出（窓の最下部に固定）
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx, ly + size - 35, size, 35);
         ctx.fillStyle = "#00FF00"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + size - 15);
+        ctx.fillText(activePoint.label, lx + size/2, ly + size - 12);
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
     }

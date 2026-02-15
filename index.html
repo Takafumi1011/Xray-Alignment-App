@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V14</title>
+    <title>X-ray Alignment Pro V15</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -106,34 +106,38 @@
     function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
 
     function calculateAngles() {
-        const getAng = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const toDeg = (r) => r * 180 / Math.PI;
+        const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const toDeg = (r) => (r * 180 / Math.PI + 360) % 360;
 
         const calc = (o, side) => {
-            const axisF = getAng(points[o+0], points[o+1]); // Femur Axis
-            const axisT = getAng(points[o+2], points[o+3]); // Tibia Axis
-            const jointF = getAng(points[o+5], points[o+4]); // Lateral to Medial
-            const jointT = getAng(points[o+7], points[o+6]); // Lateral to Medial
-            const ground = getAng(points[0], points[1]);
+            const axisF = getRad(points[o+0], points[o+1]);
+            const axisT = getRad(points[o+2], points[o+3]);
+            const jointF = getRad(points[o+5], points[o+4]); // Lateral to Medial
+            const jointT = getRad(points[o+7], points[o+6]); // Lateral to Medial
+            const ground = getRad(points[0], points[1]);
 
-            // HKA: Varus negative
-            const hka = (side === 'r') ? toDeg(axisT - axisF) : toDeg(axisF - axisT);
+            // mHKA
+            let hka = (side === 'r') ? (toDeg(axisT) - toDeg(axisF)) : (toDeg(axisF) - toDeg(axisT));
+            if (hka > 180) hka -= 360; if (hka < -180) hka += 360;
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA: 90 base. Varus Right: ~84. Correct sign logic.
-            let ldfaRaw = (side === 'r') ? toDeg(jointF - axisF) : toDeg(axisF - jointF);
-            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
+            // LDFA: 90 base. Lateral angle.
+            let diffF = (side === 'r') ? (toDeg(jointF) - toDeg(axisF)) : (toDeg(axisF) - toDeg(jointF));
+            if (diffF > 180) diffF -= 360; if (diffF < -180) diffF += 360;
+            document.getElementById(side+'-ldfa').innerText = Math.abs(90 - diffF).toFixed(1);
 
-            // MPTA: 90 base. Varus Right: ~79.
-            let mptaRaw = (side === 'r') ? toDeg(jointT - axisT) : toDeg(axisT - jointT);
-            document.getElementById(side+'-mpta').innerText = Math.abs(mptaRaw).toFixed(1);
+            // MPTA: 90 base. Medial angle.
+            let diffT = (side === 'r') ? (toDeg(jointT) - toDeg(axisT)) : (toDeg(axisT) - toDeg(jointT));
+            if (diffT > 180) diffT -= 360; if (diffT < -180) diffT += 360;
+            document.getElementById(side+'-mpta').innerText = Math.abs(90 - diffT).toFixed(1);
 
-            // JLCA: Medial open +, Lateral open -
-            const jlca = (side === 'r') ? toDeg(jointT - jointF) : toDeg(jointF - jointT);
+            // JLCA & JLOA: Medial open +, Lateral open -
+            let jlca = (side === 'r') ? (toDeg(jointT) - toDeg(jointF)) : (toDeg(jointF) - toDeg(jointT));
+            if (jlca > 180) jlca -= 360; if (jlca < -180) jlca += 360;
             document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
 
-            // JLOA: Tibial joint line vs ground
-            const jloa = (side === 'r') ? toDeg(jointT - ground) : toDeg(ground - jointT);
+            let jloa = (side === 'r') ? (toDeg(jointT) - toDeg(ground)) : (toDeg(ground) - toDeg(jointT));
+            if (jloa > 180) jloa -= 360; if (jloa < -180) jloa += 360;
             document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
         calc(2, 'r'); calc(10, 'l');
@@ -141,11 +145,10 @@
 
     function drawLoupe() {
         const size = 200; 
-        const isRightLeg = activePoint.label.startsWith('R');
-        let lx = isRightLeg ? window.innerWidth - size - 20 : 20;
-        let ly = 80;
+        const isRight = activePoint.label.startsWith('R');
         const screenY = activePoint.y * scale + offsetY;
-        if (screenY < 300) ly = window.innerHeight - size - 120; // H点調整時は下に逃げる
+        let lx = isRight ? window.innerWidth - size - 20 : 20;
+        let ly = (screenY < 250) ? window.innerHeight - size - 120 : 80;
 
         ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
         ctx.beginPath(); ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI*2); ctx.clip();
@@ -155,8 +158,10 @@
         ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
         
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + 35);
+        // ラベル表示（下部に配置して隠れるのを防ぐ）
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(lx + size/2 - 30, ly + size - 35, 60, 25);
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(activePoint.label, lx + size/2, ly + size - 15);
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
     }

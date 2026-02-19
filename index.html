@@ -218,3 +218,17 @@
         if (e.touches.length === 2) { lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); }
         else { const t = e.touches[0]; const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale; activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 40 / scale); lastX = t.clientX; lastY = t.clientY; }
     }, {passive: false});
+
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (e.touches.length === 2) { const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); const z = dist / lastDist; const mx = (e.touches[0].pageX + e.touches[1].pageX) / 2, my = (e.touches[0].pageY + e.touches[1].pageY) / 2; offsetX = mx - (mx - offsetX) * z; offsetY = my - (my - offsetY) * z; scale *= z; lastDist = dist; }
+        else if (activePoint) { const t = e.touches[0]; activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY + dragOffsetY - offsetY) / scale; }
+        else { const t = e.touches[0]; offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY); lastX = t.clientX; lastY = t.clientY; }
+        draw();
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
+    window.onload = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; draw(); };
+</script>
+</body>
+</html>

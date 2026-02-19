@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hip Center Detector Study V1</title>
+    <style>
+        body { margin: 0; background: #111; color: #eee; font-family: sans-serif; text-align: center; }
+        #container { position: relative; display: inline-block; margin-top: 20px; border: 1px solid #444; }
+        canvas { max-width: 95vw; max-height: 80vh; display: block; }
+        .ui { padding: 20px; }
+        button { padding: 12px 24px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .status { margin-top: 10px; color: #34C759; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="ui">
+    <h3>大腿骨頭中心 検知テスト V1</h3>
+    <input type="file" id="upload" accept="image/*">
+    <button onclick="runDetection()">中心を探す</button>
+    <div id="status" class="status">画像を読み込んでください</div>
+</div>
+
+<div id="container">
+    <canvas id="canvas"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const status = document.getElementById('status');
+    let img = new Image();
+
+    document.getElementById('upload').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = (f) => {
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+                status.innerText = "画像を認識しました。ボタンを押して解析開始。";
+            };
+            img.src = f.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    function runDetection() {
+        if (!img.src) return;
+        status.innerText = "解析中...";
+        
+        // 処理の軽量化のため一時的な縮小キャンバスを使用
+        const sw = 200, sh = 200;
+        const temp = document.createElement('canvas'); temp.width = sw; temp.height = sh;
+        const tCtx = temp.getContext('2d');
+        tCtx.drawImage(img, 0, 0, sw, sh);
+        const data = tCtx.getImageData(0,0,sw,sh).data;
+
+        // 大腿骨頭（球体）を抽出するための「局所的重心アルゴリズム」
+        const findSphereCenter = (xRange, yRange) => {
+            let maxBright = 0, targetX = 0, targetY = 0;
+            
+            // 1. 探索エリア内で最も明るい点（骨の最も厚い部分）を探す
+            for(let y=yRange[0]; y<yRange[1]; y++){
+                for(let x=xRange[0]; x<xRange[1]; x++){
+                    let i = (y*sw + x)*4;
+                    let b = data[i]+data[i+1]+data[i+2];
+                    if(b > maxBright) { maxBright = b; targetX = x; targetY = y; }
+                }
+            }
+
+            // 2. その周囲（骨頭のサイズ相当）で重心を精密計算
+            let tx=0, ty=0, count=0;
+            const radius = 10; // 縮小画面上での骨頭半径
+            const threshold = maxBright * 0.85;
+            
+            for(let y=targetY-radius; y<targetY+radius; y++){
+                for(let x=targetX-radius; x<targetX+radius; x++){
+                    if(x<0 || x>=sw || y<0 || y>=sh) continue;
+                    let i = (y*sw + x)*4;
+                    if(data[i]+data[i+1]+data[i+2] > threshold) {
+                        tx += x; ty += y; count++;
+                    }
+                }
+            }
+            return count > 0 ? { x: (tx/count)/sw * img.width, y: (ty/count)/sh * img.height } : null;
+        };
+
+        // 左右それぞれの想定エリアをスキャン
+        const leftHip = findSphereCenter([110, 160], [20, 60]);  // 画面上の左脚(LH)
+        const rightHip = findSphereCenter([40, 90], [20, 60]);   // 画面上の右脚(RH)
+
+        // 結果の描画
+        ctx.drawImage(img, 0, 0);
+        drawCross(rightHip, "Detected RH");
+        drawCross(leftHip, "Detected LH");
+
+        status.innerText = "検知完了。";
+    }
+
+    function drawCross(pt, label) {
+        if(!pt) return;
+        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(pt.x-30, pt.y); ctx.lineTo(pt.x+30, pt.y);
+        ctx.moveTo(pt.x, pt.y-30); ctx.lineTo(pt.x, pt.y+30);
+        ctx.stroke();
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 40px sans-serif";
+        ctx.fillText(label, pt.x - 100, pt.y - 50);
+    }
+</script>
+</body>
+</html>

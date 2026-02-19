@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V24</title>
+    <title>X-ray Alignment Pro V25</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -65,10 +65,12 @@
         const w = img.width, h = img.height;
         points = [
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
+            // 右脚(2-9): 2:RH, 3:RKf, 4:RKt, 5:RA, 6:RMF, 7:RLF, 8:RMT, 9:RLT
             { x: w * 0.35, y: h * 0.15, label: 'RH' }, { x: w * 0.35, y: h * 0.45, label: 'RKf' },
             { x: w * 0.35, y: h * 0.48, label: 'RKt' }, { x: w * 0.35, y: h * 0.85, label: 'RA' },
             { x: w * 0.40, y: h * 0.46, label: 'RMF' }, { x: w * 0.30, y: h * 0.46, label: 'RLF' },
             { x: w * 0.40, y: h * 0.47, label: 'RMT' }, { x: w * 0.30, y: h * 0.47, label: 'RLT' },
+            // 左脚(10-17): 10:LH, 11:LKf, 12:LKt, 13:LA, 14:LMF, 15:LLF, 16:LMT, 17:LLT
             { x: w * 0.65, y: h * 0.15, label: 'LH' }, { x: w * 0.65, y: h * 0.45, label: 'LKf' },
             { x: w * 0.65, y: h * 0.48, label: 'LKt' }, { x: w * 0.65, y: h * 0.85, label: 'LA' },
             { x: w * 0.60, y: h * 0.46, label: 'LMF' }, { x: w * 0.70, y: h * 0.46, label: 'LLF' },
@@ -108,33 +110,36 @@
     function calculateAngles() {
         const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
         const norm = (deg) => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
+        // 平行線用：180度反転しても同じ線とみなす
+        const lineDiff = (a1, a2) => { let d = norm(a1 - a2); if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
 
         const calc = (o, side) => {
-            const axisF = getRad(points[o+0], points[o+1]); // Hip-Knee
-            const axisT = getRad(points[o+3], points[o+2]); // Ankle-Knee
-            const jointF = (side === 'r') ? getRad(points[o+7], points[o+6]) : getRad(points[o+6], points[o+7]);
-            const jointT = (side === 'r') ? getRad(points[o+9], points[o+8]) : getRad(points[o+8], points[o+9]);
+            const axisF = getRad(points[o+0], points[o+1]); // Hip to Knee
+            const axisT = getRad(points[o+3], points[o+2]); // Ankle to Knee
+            const jointF = getRad(points[o+5], points[o+4]); // Lateral to Medial
+            const jointT = getRad(points[o+7], points[o+6]); // Lateral to Medial
             const ground = getRad(points[0], points[1]);
 
-            // HKA: Varus negative logic
+            // HKA
             const axisKA = getRad(points[o+1], points[o+3]);
-            let hka = norm((side === 'r') ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI;
+            let hka = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI);
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
             // LDFA & MPTA (90 base)
-            let ldfaRaw = norm((side === 'r') ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI;
+            let ldfaRaw = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
             document.getElementById(side+'-ldfa').innerText = Math.abs(90 - ldfaRaw).toFixed(1);
 
-            let mptaRaw = norm((side === 'r') ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI;
+            let mptaRaw = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
             document.getElementById(side+'-mpta').innerText = Math.abs(90 - mptaRaw).toFixed(1);
 
-            // JLCA & JLOA (Medial open +, Lateral open -)
-            let jlca = norm((side === 'r') ? (jointT - jointF) : (jointF - jointT)) * 180 / Math.PI;
-            document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
-            let jloa = norm((side === 'r') ? (jointT - ground) : (ground - jointT)) * 180 / Math.PI;
-            document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
+            // JLCA & JLOA (Parallel = 0)
+            let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
+            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
+
+            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
+            document.getElementById(side+'-jloa').innerText = (side === 'r' ? jloa : -jloa).toFixed(1);
         };
-        try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
+        try { calc(2, 'r'); calc(10, 'l'); } catch(e) { console.error(e); }
     }
 
     function drawLoupe() {

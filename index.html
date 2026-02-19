@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V27</title>
+    <title>X-ray Alignment Pro V28</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -117,17 +117,17 @@
             const jointT = getRad(points[o+7], points[o+6]);
             const ground = getRad(points[0], points[1]);
 
-            // HKA ( mechanical axis )
+            // HKA
             const axisKA = getRad(points[o+1], points[o+3]);
             let hka = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI);
             document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // LDFA & MPTA ( 先生の指定数式を適用 )
-            let ldfaDev = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
-            document.getElementById(side+'-ldfa').innerText = (90 - ldfaDev).toFixed(1);
+            // LDFA & MPTA ( 0基準と180基準の臨床的表記 )
+            let ldfaRaw = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
 
-            let mptaDev = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
-            document.getElementById(side+'-mpta').innerText = (90 + mptaDev).toFixed(1);
+            let mptaRaw = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
+            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(mptaRaw)).toFixed(1);
 
             // JLCA
             let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
@@ -152,9 +152,12 @@
         ctx.drawImage(img, activePoint.x - sw/2, activePoint.y - sw/2, sw, sw, lx, ly, size, size);
         ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx, ly + size - 35, size, 35);
+        
+        // ラベル表示（黒背景付きで最下部中央に配置）
+        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx, ly + size - 30, size, 30);
         ctx.fillStyle = "#00FF00"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + size - 12);
+        ctx.fillText(activePoint.label, lx + size/2, ly + size - 8);
+        
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
     }

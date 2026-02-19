@@ -1,214 +1,54 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V28</title>
-    <style>
-        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
-        .row { display: flex; justify-content: space-around; padding: 4px 0; border-bottom: 1px solid #222; }
-        .val { color: #007AFF; font-weight: bold; font-size: 12px; }
-        #canvas-container { position: relative; width: 100vw; height: 100vh; }
-        canvas { display: block; }
-        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 95%; }
-        button { padding: 10px 12px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 12px; }
-        .auto-btn { background: #34C759; }
-        .save-btn { background: #FF9500; }
-    </style>
-</head>
-<body>
-
-<div id="header">
-    <div class="row">
-        <div>右 HKA: <span id="r-hka" class="val">-</span></div>
-        <div>LDFA: <span id="r-ldfa" class="val">-</span></div>
-        <div>MPTA: <span id="r-mpta" class="val">-</span></div>
-        <div>JLCA: <span id="r-jlca" class="val">-</span></div>
-        <div>JLOA: <span id="r-jloa" class="val">-</span></div>
-    </div>
-    <div class="row">
-        <div>左 HKA: <span id="l-hka" class="val">-</span></div>
-        <div>LDFA: <span id="l-ldfa" class="val">-</span></div>
-        <div>MPTA: <span id="l-mpta" class="val">-</span></div>
-        <div>JLCA: <span id="l-jlca" class="val">-</span></div>
-        <div>JLOA: <span id="l-jloa" class="val">-</span></div>
-    </div>
-</div>
-
-<div id="canvas-container">
-    <canvas id="mainCanvas"></canvas>
-</div>
-
-<div class="controls">
-    <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">画像読込</button>
-    <button class="auto-btn" onclick="autoDetect()">自動検索</button>
-    <button class="save-btn" onclick="saveAsImage()">画像保存</button>
-    <button class="save-btn" onclick="saveAsCSV()">CSV保存</button>
-</div>
-
-<script>
-    const canvas = document.getElementById('mainCanvas');
-    const ctx = canvas.getContext('2d');
-    const upload = document.getElementById('upload');
-    let img = new Image();
-    let imgLoaded = false;
-    let scale = 1, offsetX = 0, offsetY = 0;
-    let points = []; 
-    let activePoint = null;
-    let lastDist = 0, lastX = 0, lastY = 0;
-    const dragOffsetY = -45;
-
-    function initPoints() {
-        if (!imgLoaded) return;
-        const w = img.width, h = img.height;
-        points = [
-            { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
-            { x: w * 0.35, y: h * 0.15, label: 'RH' }, { x: w * 0.35, y: h * 0.45, label: 'RKf' },
-            { x: w * 0.35, y: h * 0.48, label: 'RKt' }, { x: w * 0.35, y: h * 0.85, label: 'RA' },
-            { x: w * 0.40, y: h * 0.46, label: 'RMF' }, { x: w * 0.30, y: h * 0.46, label: 'RLF' },
-            { x: w * 0.40, y: h * 0.47, label: 'RMT' }, { x: w * 0.30, y: h * 0.47, label: 'RLT' },
-            { x: w * 0.65, y: h * 0.15, label: 'LH' }, { x: w * 0.65, y: h * 0.45, label: 'LKf' },
-            { x: w * 0.65, y: h * 0.48, label: 'LKt' }, { x: w * 0.65, y: h * 0.85, label: 'LA' },
-            { x: w * 0.60, y: h * 0.46, label: 'LMF' }, { x: w * 0.70, y: h * 0.46, label: 'LLF' },
-            { x: w * 0.60, y: h * 0.47, label: 'LMT' }, { x: w * 0.70, y: h * 0.47, label: 'LLT' }
-        ];
-    }
-
-    upload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        const reader = new FileReader();
-        reader.onload = (f) => { img.onload = () => { imgLoaded = true; scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height); offsetX = (window.innerWidth - img.width * scale) / 2; offsetY = (window.innerHeight - img.height * scale) / 2; initPoints(); draw(); }; img.src = f.target.result; };
-        reader.readAsDataURL(file);
-    });
-
-    function draw() {
-        ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (!imgLoaded) return;
-        ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0);
-        ctx.lineWidth = 3 / scale;
-        drawLine(points[0], points[1], 'white'); 
-        [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
-            drawLine(points[o+0], points[o+1], '#FF3B30'); drawLine(points[o+2], points[o+3], '#5856D6'); 
-            drawLine(points[o+4], points[o+5], '#FFCC00'); drawLine(points[o+6], points[o+7], '#34C759'); 
-        });
-        points.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 6 / scale, 0, Math.PI*2);
-            ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
-            ctx.fill(); ctx.strokeStyle = "black"; ctx.lineWidth = 1/scale; ctx.stroke();
-        });
-        if (activePoint) drawLoupe();
-        calculateAngles();
-    }
-
-    function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
-
-    function calculateAngles() {
-        const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const norm = (deg) => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
-        const lineDiff = (a1, a2) => { let d = norm(a1 - a2); if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
-
-        const calc = (o, side) => {
-            const axisF = getRad(points[o+0], points[o+1]);
-            const axisT = getRad(points[o+3], points[o+2]);
-            const jointF = getRad(points[o+5], points[o+4]);
-            const jointT = getRad(points[o+7], points[o+6]);
-            const ground = getRad(points[0], points[1]);
-
-            // HKA
-            const axisKA = getRad(points[o+1], points[o+3]);
-            let hka = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI);
-            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
-
-            // LDFA & MPTA ( 0基準と180基準の臨床的表記 )
-            let ldfaRaw = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
-            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
-
-            let mptaRaw = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
-            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(mptaRaw)).toFixed(1);
-
-            // JLCA
-            let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
-            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
-
-            // JLOA
-            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
-            document.getElementById(side+'-jloa').innerText = (side === 'r' ? -jloa : jloa).toFixed(1);
-        };
-        try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
-    }
-
-    function drawLoupe() {
-        const size = 180; const isRight = activePoint.label.startsWith('R');
-        const screenY = activePoint.y * scale + offsetY;
-        let lx = isRight ? window.innerWidth - size - 20 : 20;
-        let ly = (screenY < 250) ? window.innerHeight - size - 120 : 80;
-        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        ctx.beginPath(); ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI*2); ctx.clip();
-        ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
-        const zoom = 2.5; const sw = size/zoom/scale;
-        ctx.drawImage(img, activePoint.x - sw/2, activePoint.y - sw/2, sw, sw, lx, ly, size, size);
-        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
-        
-        // ラベル表示（黒背景付きで最下部中央に配置）
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx, ly + size - 30, size, 30);
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + size - 8);
-        
-        ctx.restore();
-        ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
-    }
-
-    function saveAsImage() {
-        const tempCanvas = document.createElement('canvas'); tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
-        const tCtx = tempCanvas.getContext('2d'); tCtx.drawImage(canvas, 0, 0);
-        tCtx.fillStyle = "rgba(0,0,0,0.8)"; tCtx.fillRect(0, 0, canvas.width, 70);
-        tCtx.fillStyle = "white"; tCtx.font = "bold 14px sans-serif";
-        tCtx.fillText("R-HKA:"+document.getElementById('r-hka').innerText+" LDFA:"+document.getElementById('r-ldfa').innerText+" MPTA:"+document.getElementById('r-mpta').innerText+" JLCA:"+document.getElementById('r-jlca').innerText+" JLOA:"+document.getElementById('r-jloa').innerText, 10, 30);
-        tCtx.fillText("L-HKA:"+document.getElementById('l-hka').innerText+" LDFA:"+document.getElementById('l-ldfa').innerText+" MPTA:"+document.getElementById('l-mpta').innerText+" JLCA:"+document.getElementById('l-jlca').innerText+" JLOA:"+document.getElementById('l-jloa').innerText, 10, 55);
-        const a = document.createElement('a'); a.download = `Xray-Align-${Date.now()}.jpg`; a.href = tempCanvas.toDataURL("image/jpeg", 0.9); a.click();
-    }
-
-    function saveAsCSV() {
-        let c = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
-        ['r','l'].forEach(side => { c += `${side==='r'?'Right':'Left'},${document.getElementById(side+'-hka').innerText},${document.getElementById(side+'-ldfa').innerText},${document.getElementById(side+'-mpta').innerText},${document.getElementById(side+'-jlca').innerText},${document.getElementById(side+'-jloa').innerText}\n`; });
-        const b = new Blob([c], { type: 'text/csv' }); const a = document.createElement('a'); a.download = `Xray-Data-${Date.now()}.csv`; a.href = URL.createObjectURL(b); a.click();
-    }
-
+    // 改良された自動検出アルゴリズム
     function autoDetect() {
         if (!imgLoaded) return;
-        const t = document.createElement('canvas'); t.width = 100; t.height = 100;
-        const tc = t.getContext('2d'); tc.drawImage(img, 0, 0, 100, 100);
-        const d = tc.getImageData(0,0,100,100).data;
-        const f = (y1, y2, x1, x2) => { let tx=0, ty=0, c=0; for(let y=y1; y<y2; y++) { for(let x=x1; x<x2; x++) { let i=(y*100+x)*4; if(d[i]+d[i+1]+d[i+2]>480){ tx+=x; ty+=y; c++; } } } return c>0?{x:tx/c/100*img.width, y:ty/c/100*img.height}:null; };
-        const rH=f(10,30,10,50); if(rH){points[2].x=rH.x; points[2].y=rH.y;}
-        const rK=f(40,60,10,50); if(rK){points[3].x=rK.x; points[3].y=rK.y; points[4].x=rK.x; points[4].y=rK.y+50;}
-        const rA=f(75,95,10,50); if(rA){points[5].x=rA.x; points[5].y=rA.y;}
-        const lH=f(10,30,50,90); if(lH){points[10].x=lH.x; points[10].y=lH.y;}
-        const lK=f(40,60,50,90); if(lK){points[11].x=lK.x; points[11].y=lK.y; points[12].x=lK.x; points[12].y=lK.y+50;}
-        const lA=f(75,95,50,90); if(lA){points[13].x=lA.x; points[13].y=lA.y;}
+        const temp = document.createElement('canvas'); temp.width = 100; temp.height = 100;
+        const tCtx = temp.getContext('2d'); tCtx.drawImage(img, 0, 0, 100, 100);
+        const d = tCtx.getImageData(0,0,100,100).data;
+
+        // 骨頭中心を探すための重心計算関数
+        const findHipCenter = (y1, y2, x1, x2) => {
+            let tx=0, ty=0, count=0, maxB=0;
+            // まず領域内の最大輝度を確認
+            for(let y=y1; y<y2; y++){
+                for(let x=x1; x<x2; x++){
+                    let i=(y*100+x)*4; let b = d[i]+d[i+1]+d[i+2];
+                    if(b > maxB) maxB = b;
+                }
+            }
+            // 最大輝度に近い（骨である可能性が高い）ピクセルのみで重心をとる
+            let threshold = maxB * 0.85; 
+            for(let y=y1; y<y2; y++) {
+                for(let x=x1; x<x2; x++) {
+                    let i=(y*100+x)*4;
+                    if(d[i]+d[i+1]+d[i+2] > threshold){ tx+=x; ty+=y; count++; }
+                }
+            }
+            return count > 0 ? { x: (tx/count)/100 * img.width, y: (ty/count)/100 * img.height } : null;
+        };
+
+        // 右股関節 (RH: points[2]) - 画面中央よりやや左寄りの上部をスキャン
+        const rH = findHipCenter(10, 25, 25, 45); 
+        if(rH){ points[2].x = rH.x; points[2].y = rH.y; }
+
+        // 左股関節 (LH: points[10]) - 画面中央よりやや右寄りの上部をスキャン
+        const lH = findHipCenter(10, 25, 55, 75); 
+        if(lH){ points[10].x = lH.x; points[10].y = lH.y; }
+
+        // 膝・足部も同様に閾値を最適化して再配置
+        const findJoint = (y1, y2, x1, x2) => {
+            let tx=0, ty=0, count=0;
+            for(let y=y1; y<y2; y++) {
+                for(let x=x1; x<x2; x++) {
+                    let i=(y*100+x)*4; if(d[i]+d[i+1]+d[i+2] > 450){ tx+=x; ty+=y; count++; }
+                }
+            }
+            return count > 0 ? { x: (tx/count)/100 * img.width, y: (ty/count)/100 * img.height } : null;
+        };
+
+        const rK = findJoint(40, 55, 25, 45); if(rK){ points[3].x=rK.x; points[3].y=rK.y; points[4].x=rK.x; points[4].y=rK.y+50; }
+        const rA = findJoint(75, 95, 25, 45); if(rA){ points[5].x=rA.x; points[5].y=rA.y; }
+        const lK = findJoint(40, 55, 55, 75); if(lK){ points[11].x=lK.x; points[11].y=lK.y; points[12].x=lK.x; points[12].y=lK.y+50; }
+        const lA = findJoint(75, 95, 55, 75); if(lA){ points[13].x=lA.x; points[13].y=lA.y; }
+
         draw();
     }
-
-    canvas.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (e.touches.length === 2) { lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); }
-        else { const t = e.touches[0]; const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale; activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 40 / scale); lastX = t.clientX; lastY = t.clientY; }
-    }, {passive: false});
-
-    canvas.addEventListener('touchmove', e => {
-        e.preventDefault();
-        if (e.touches.length === 2) { const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); const z = dist / lastDist; const mx = (e.touches[0].pageX + e.touches[1].pageX) / 2, my = (e.touches[0].pageY + e.touches[1].pageY) / 2; offsetX = mx - (mx - offsetX) * z; offsetY = my - (my - offsetY) * z; scale *= z; lastDist = dist; }
-        else if (activePoint) { const t = e.touches[0]; activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY + dragOffsetY - offsetY) / scale; }
-        else { const t = e.touches[0]; offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY); lastX = t.clientX; lastY = t.clientY; }
-        draw();
-    }, {passive: false});
-
-    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
-    window.onload = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
-</script>
-</body>
-</html>

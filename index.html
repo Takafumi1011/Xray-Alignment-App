@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro - Verification V23</title>
+    <title>X-ray Alignment Pro V24</title>
     <style>
         body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
@@ -14,6 +14,7 @@
         .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 95%; }
         button { padding: 10px 12px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 12px; }
         .auto-btn { background: #34C759; }
+        .save-btn { background: #FF9500; }
     </style>
 </head>
 <body>
@@ -43,6 +44,8 @@
     <input type="file" id="upload" accept="image/*" style="display:none">
     <button onclick="document.getElementById('upload').click()">画像読込</button>
     <button class="auto-btn" onclick="autoDetect()">自動検索</button>
+    <button class="save-btn" onclick="saveAsImage()">画像保存</button>
+    <button class="save-btn" onclick="saveAsCSV()">CSV保存</button>
 </div>
 
 <script>
@@ -62,12 +65,10 @@
         const w = img.width, h = img.height;
         points = [
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
-            // 右脚 (LF:7, MF:6)
             { x: w * 0.35, y: h * 0.15, label: 'RH' }, { x: w * 0.35, y: h * 0.45, label: 'RKf' },
             { x: w * 0.35, y: h * 0.48, label: 'RKt' }, { x: w * 0.35, y: h * 0.85, label: 'RA' },
             { x: w * 0.40, y: h * 0.46, label: 'RMF' }, { x: w * 0.30, y: h * 0.46, label: 'RLF' },
             { x: w * 0.40, y: h * 0.47, label: 'RMT' }, { x: w * 0.30, y: h * 0.47, label: 'RLT' },
-            // 左脚 (LF:15, MF:14)
             { x: w * 0.65, y: h * 0.15, label: 'LH' }, { x: w * 0.65, y: h * 0.45, label: 'LKf' },
             { x: w * 0.65, y: h * 0.48, label: 'LKt' }, { x: w * 0.65, y: h * 0.85, label: 'LA' },
             { x: w * 0.60, y: h * 0.46, label: 'LMF' }, { x: w * 0.70, y: h * 0.46, label: 'LLF' },
@@ -78,16 +79,7 @@
     upload.addEventListener('change', (e) => {
         const file = e.target.files[0];
         const reader = new FileReader();
-        reader.onload = (f) => {
-            img.onload = () => {
-                imgLoaded = true;
-                scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height);
-                offsetX = (window.innerWidth - img.width * scale) / 2;
-                offsetY = (window.innerHeight - img.height * scale) / 2;
-                initPoints(); draw();
-            };
-            img.src = f.target.result;
-        };
+        reader.onload = (f) => { img.onload = () => { imgLoaded = true; scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height); offsetX = (window.innerWidth - img.width * scale) / 2; offsetY = (window.innerHeight - img.height * scale) / 2; initPoints(); draw(); }; img.src = f.target.result; };
         reader.readAsDataURL(file);
     });
 
@@ -115,28 +107,34 @@
 
     function calculateAngles() {
         const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const toDeg = (rad) => rad * 180 / Math.PI;
         const norm = (deg) => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
 
         const calc = (o, side) => {
-            const axisF = getRad(points[o+0], points[o+1]); // Hip to Knee
-            const axisT = getRad(points[o+3], points[o+2]); // Ankle to Knee
+            const axisF = getRad(points[o+0], points[o+1]); // Hip-Knee
+            const axisT = getRad(points[o+3], points[o+2]); // Ankle-Knee
             const jointF = (side === 'r') ? getRad(points[o+7], points[o+6]) : getRad(points[o+6], points[o+7]);
             const jointT = (side === 'r') ? getRad(points[o+9], points[o+8]) : getRad(points[o+8], points[o+9]);
             const ground = getRad(points[0], points[1]);
 
-            // LDFA 検証
-            let ldfaDiff = norm(toDeg(jointF - axisF));
-            let ldfa = (side === 'r') ? (90 - ldfaDiff) : (90 + ldfaDiff);
-            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfa).toFixed(1);
+            // HKA: Varus negative logic
+            const axisKA = getRad(points[o+1], points[o+3]);
+            let hka = norm((side === 'r') ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI;
+            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
 
-            // 他の値を V20 のロジックで維持
-            document.getElementById(side+'-hka').innerText = norm(toDeg((side === 'r') ? (axisF - getRad(points[o+1], points[o+3])) : (getRad(points[o+1], points[o+3]) - axisF))).toFixed(1);
-            document.getElementById(side+'-mpta').innerText = Math.abs((side === 'r') ? (90 + norm(toDeg(jointT - axisT))) : (90 - norm(toDeg(jointT - axisT)))).toFixed(1);
-            document.getElementById(side+'-jlca').innerText = norm(toDeg((side === 'r') ? (jointT - jointF) : (jointF - jointT))).toFixed(1);
-            document.getElementById(side+'-jloa').innerText = norm(toDeg((side === 'r') ? (jointT - ground) : (ground - jointT))).toFixed(1);
+            // LDFA & MPTA (90 base)
+            let ldfaRaw = norm((side === 'r') ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI;
+            document.getElementById(side+'-ldfa').innerText = Math.abs(90 - ldfaRaw).toFixed(1);
+
+            let mptaRaw = norm((side === 'r') ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI;
+            document.getElementById(side+'-mpta').innerText = Math.abs(90 - mptaRaw).toFixed(1);
+
+            // JLCA & JLOA (Medial open +, Lateral open -)
+            let jlca = norm((side === 'r') ? (jointT - jointF) : (jointF - jointT)) * 180 / Math.PI;
+            document.getElementById(side+'-jlca').innerText = jlca.toFixed(1);
+            let jloa = norm((side === 'r') ? (jointT - ground) : (ground - jointT)) * 180 / Math.PI;
+            document.getElementById(side+'-jloa').innerText = jloa.toFixed(1);
         };
-        calc(2, 'r'); calc(10, 'l');
+        try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
     }
 
     function drawLoupe() {
@@ -156,6 +154,22 @@
         ctx.fillText(activePoint.label, lx + size/2, ly + size - 12);
         ctx.restore();
         ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
+    }
+
+    function saveAsImage() {
+        const temp = document.createElement('canvas'); temp.width = canvas.width; temp.height = canvas.height;
+        const tCtx = temp.getContext('2d'); tCtx.drawImage(canvas, 0, 0);
+        tCtx.fillStyle = "rgba(0,0,0,0.8)"; tCtx.fillRect(0, 0, canvas.width, 70);
+        tCtx.fillStyle = "white"; tCtx.font = "bold 14px sans-serif";
+        tCtx.fillText("R-HKA:"+document.getElementById('r-hka').innerText+" LDFA:"+document.getElementById('r-ldfa').innerText+" MPTA:"+document.getElementById('r-mpta').innerText+" JLCA:"+document.getElementById('r-jlca').innerText+" JLOA:"+document.getElementById('r-jloa').innerText, 10, 30);
+        tCtx.fillText("L-HKA:"+document.getElementById('l-hka').innerText+" LDFA:"+document.getElementById('l-ldfa').innerText+" MPTA:"+document.getElementById('l-mpta').innerText+" JLCA:"+document.getElementById('l-jlca').innerText+" JLOA:"+document.getElementById('l-jloa').innerText, 10, 55);
+        const a = document.createElement('a'); a.download = `Xray-Align-${Date.now()}.jpg`; a.href = temp.toDataURL("image/jpeg", 0.9); a.click();
+    }
+
+    function saveAsCSV() {
+        let c = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
+        ['r','l'].forEach(s => { c += `${s==='r'?'Right':'Left'},${document.getElementById(s+'-hka').innerText},${document.getElementById(s+'-ldfa').innerText},${document.getElementById(s+'-mpta').innerText},${document.getElementById(s+'-jlca').innerText},${document.getElementById(s+'-jloa').innerText}\n`; });
+        const b = new Blob([c], { type: 'text/csv' }); const a = document.createElement('a'); a.download = `Xray-Data-${Date.now()}.csv`; a.href = URL.createObjectURL(b); a.click();
     }
 
     function autoDetect() {

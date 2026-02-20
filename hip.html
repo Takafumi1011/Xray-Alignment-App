@@ -3,114 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hip Detector Study V3</title>
+    <title>Precision Hip Finder V4</title>
     <style>
-        body { margin: 0; background: #000; color: #eee; font-family: sans-serif; text-align: center; }
-        #container { position: relative; display: inline-block; margin-top: 10px; border: 1px solid #444; }
-        canvas { max-width: 95vw; max-height: 75vh; display: block; }
-        .ui { padding: 15px; }
-        button { padding: 12px 24px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; }
-        .status { margin-top: 10px; color: #34C759; font-size: 14px; font-weight: bold; }
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; text-align: center; overflow-x: hidden; }
+        #canvas-container { position: relative; display: inline-block; margin-top: 10px; cursor: crosshair; }
+        canvas { max-width: 95vw; max-height: 80vh; border: 1px solid #444; }
+        .ui { padding: 15px; background: #111; border-bottom: 1px solid #333; }
+        .guide { font-size: 14px; color: #FF9500; margin-bottom: 8px; }
+        button { padding: 10px 20px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; }
     </style>
 </head>
 <body>
 
 <div class="ui">
-    <h3>大腿骨頭検知テスト V3（円形相関法）</h3>
+    <h3>大腿骨頭 精密・半自動検知 V4</h3>
+    <div class="guide">画像を読み込んだら、骨頭の付近をタップしてください</div>
     <input type="file" id="upload" accept="image/*">
-    <button onclick="runDetection()">精密解析を開始</button>
-    <div id="status" class="status">画像を読み込んでください</div>
 </div>
 
-<div id="container">
+<div id="canvas-container">
     <canvas id="canvas"></canvas>
 </div>
 
 <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const status = document.getElementById('status');
     let img = new Image();
+    let imgLoaded = false;
 
     document.getElementById('upload').addEventListener('change', (e) => {
         const file = e.target.files[0];
         const reader = new FileReader();
         reader.onload = (f) => {
             img.onload = () => {
+                imgLoaded = true;
                 canvas.width = img.width; canvas.height = img.height;
                 ctx.drawImage(img, 0, 0);
-                status.innerText = "準備完了。精密解析ボタンを押してください。";
             };
             img.src = f.target.result;
         };
         reader.readAsDataURL(file);
     });
 
-    function runDetection() {
-        if (!img.src) return;
-        status.innerText = "円形オブジェクトを探索中...";
-        
-        const sw = 200, sh = 200; // 高速化のため内部解像度を調整
-        const temp = document.createElement('canvas'); temp.width = sw; temp.height = sh;
-        const tCtx = temp.getContext('2d');
-        tCtx.drawImage(img, 0, 0, sw, sh);
-        const d = tCtx.getImageData(0,0,sw,sh).data;
+    // キャンバスタップ時の処理
+    canvas.addEventListener('mousedown', handleTap);
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        handleTap(touch);
+    });
 
-        // V3: 円形度スキャン（周囲が暗く、中心が明るい球体を探す）
-        const findHipV3 = (xRange, yRange) => {
-            let bestX = 0, bestY = 0, maxScore = -100000;
-            const r = 12; // 探索する骨頭の推定半径
-            
-            for(let y=yRange[0]; y<yRange[1]; y++){
-                for(let x=xRange[0]; x<xRange[1]; x++){
-                    let i = (y*sw + x)*4;
-                    let coreB = d[i]+d[i+1]+d[i+2];
-                    
-                    // 円周上の輝度をサンプリング
-                    let edgeB = 0;
-                    let samples = 8;
-                    for(let a=0; a<Math.PI*2; a += Math.PI*2/samples) {
-                        let ex = Math.round(x + Math.cos(a)*r);
-                        let ey = Math.round(y + Math.sin(a)*r);
-                        if(ex>=0 && ex<sw && ey>=0 && ey<sh) {
-                            let ei = (ey*sw + ex)*4;
-                            edgeB += d[ei]+d[ei+1]+d[ei+2];
-                        }
-                    }
-                    
-                    // スコア = 中心輝度 - 周辺（関節裂隙）輝度
-                    // これにより「白く丸い塊」を強調
-                    let score = coreB * 2 - (edgeB / samples);
-                    
-                    if(score > maxScore) {
-                        maxScore = score; bestX = x; bestY = y;
-                    }
-                }
-            }
-            return { x: bestX/sw * img.width, y: bestY/sh * img.height };
-        };
+    function handleTap(e) {
+        if (!imgLoaded) return;
 
-        // 探索エリアを「画像中央付近」に限定（端のノイズを完全無視）
-        // 200x200の内部座標系
-        const rightHip = findHipV3([30, 90], [30, 80]); // 画面左（右脚）
-        const leftHip = findHipV3([110, 170], [30, 80]); // 画面右（左脚）
+        // タップ座標を画像上の座標に変換
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const tapX = (e.clientX - rect.left) * scaleX;
+        const tapY = (e.clientY - rect.top) * scaleY;
 
-        ctx.drawImage(img, 0, 0);
-        drawResult(rightHip, "Detected RH");
-        drawResult(leftHip, "Detected LH");
-        status.innerText = "解析完了。赤い点に重なりましたか？";
+        // 精密化（タップ地点の周囲をスキャン）
+        const refinedPt = refineCenter(tapX, tapY);
+
+        // 結果描画
+        drawResult(refinedPt);
     }
 
-    function drawResult(pt, label) {
-        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 6;
+    function refineCenter(tx, ty) {
+        const scanSize = 60; // タップした周り 60px をスキャン
+        const temp = document.createElement('canvas');
+        temp.width = scanSize; temp.height = scanSize;
+        const tCtx = temp.getContext('2d');
+        
+        // 周辺画像を取得
+        tCtx.drawImage(img, tx - scanSize/2, ty - scanSize/2, scanSize, scanSize, 0, 0, scanSize, scanSize);
+        const data = tCtx.getImageData(0,0,scanSize,scanSize).data;
+
+        let weightedX = 0, weightedY = 0, totalWeight = 0;
+        let maxB = 0;
+
+        // 1. エリア内の最大輝度を確認
+        for(let i=0; i<data.length; i+=4) {
+            let b = data[i] + data[i+1] + data[i+2];
+            if(b > maxB) maxB = b;
+        }
+
+        // 2. 輝度に基づく重心計算（骨の厚い「中心」に吸い寄せる）
+        const threshold = maxB * 0.9; // 上位10%の明るい部分（骨）のみ抽出
+        for(let y=0; y<scanSize; y++) {
+            for(let x=0; x<scanSize; x++) {
+                let i = (y * scanSize + x) * 4;
+                let b = data[i] + data[i+1] + data[i+2];
+                if(b > threshold) {
+                    weightedX += x; weightedY += y; totalWeight++;
+                }
+            }
+        }
+
+        if(totalWeight === 0) return { x: tx, y: ty };
+        
+        return {
+            x: tx - scanSize/2 + (weightedX / totalWeight),
+            y: ty - scanSize/2 + (weightedY / totalWeight)
+        };
+    }
+
+    function drawResult(pt) {
+        // 画像をクリアしてから再描画（古い十字を消す）
+        ctx.drawImage(img, 0, 0);
+        
+        // 精密検知した点にターゲットを描画
+        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 35, 0, Math.PI*2); // 骨頭を囲む
+        ctx.arc(pt.x, pt.y, 30, 0, Math.PI*2); // 外周
         ctx.stroke();
-        ctx.beginPath(); // 中心点
-        ctx.arc(pt.x, pt.y, 5, 0, Math.PI*2);
-        ctx.fillStyle = "#00FF00"; ctx.fill();
-        ctx.font = "bold 40px sans-serif";
-        ctx.fillText(label, pt.x - 100, pt.y - 60);
+        
+        ctx.beginPath(); // 十字
+        ctx.moveTo(pt.x - 40, pt.y); ctx.lineTo(pt.x + 40, pt.y);
+        ctx.moveTo(pt.x, pt.y - 40); ctx.lineTo(pt.x, pt.y + 40);
+        ctx.stroke();
+
+        ctx.fillStyle = "#00FF00"; ctx.font = "bold 35px sans-serif";
+        ctx.fillText("BULLSEYE", pt.x + 45, pt.y - 45);
     }
 </script>
 </body>

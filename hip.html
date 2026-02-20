@@ -2,27 +2,34 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Precision Hip Finder V4</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Precision Hip Finder V4.1</title>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; text-align: center; overflow-x: hidden; }
-        #canvas-container { position: relative; display: inline-block; margin-top: 10px; cursor: crosshair; }
-        canvas { max-width: 95vw; max-height: 80vh; border: 1px solid #444; }
-        .ui { padding: 15px; background: #111; border-bottom: 1px solid #333; }
-        .guide { font-size: 14px; color: #FF9500; margin-bottom: 8px; }
-        button { padding: 10px 20px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; }
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; text-align: center; overflow: hidden; touch-action: none; }
+        #canvas-container { position: relative; width: 100vw; height: 75vh; cursor: crosshair; background: #111; }
+        canvas { display: block; }
+        .ui { padding: 15px; background: #1a1a1a; border-bottom: 1px solid #333; }
+        .guide { font-size: 13px; color: #34C759; margin-bottom: 8px; font-weight: bold; }
+        .controls { padding: 10px; display: flex; justify-content: center; gap: 10px; }
+        button { padding: 12px 20px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; font-size: 14px; }
+        .reset-btn { background: #FF3B30; }
     </style>
 </head>
 <body>
 
 <div class="ui">
-    <h3>大腿骨頭 精密・半自動検知 V4</h3>
-    <div class="guide">画像を読み込んだら、骨頭の付近をタップしてください</div>
-    <input type="file" id="upload" accept="image/*">
+    <div id="instruction" class="guide">1. 画像を読み込んでください</div>
+    <input type="file" id="upload" accept="image/*" style="display:none">
+    <button onclick="document.getElementById('upload').click()">画像読込</button>
+    <button class="reset-btn" onclick="resetMarkers()">リセット</button>
 </div>
 
 <div id="canvas-container">
     <canvas id="canvas"></canvas>
+</div>
+
+<div class="controls">
+    <div id="status-text" style="font-size: 12px; color: #aaa;">待機中...</div>
 </div>
 
 <script>
@@ -30,6 +37,8 @@
     const ctx = canvas.getContext('2d');
     let img = new Image();
     let imgLoaded = false;
+    let detectedPoints = []; // 検出した点を保存
+    let step = 0; // 0:読込前, 1:右脚待ち, 2:左脚待ち
 
     document.getElementById('upload').addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -37,95 +46,108 @@
         reader.onload = (f) => {
             img.onload = () => {
                 imgLoaded = true;
-                canvas.width = img.width; canvas.height = img.height;
-                ctx.drawImage(img, 0, 0);
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight * 0.75;
+                drawAll();
+                setStep(1);
             };
             img.src = f.target.result;
         };
         reader.readAsDataURL(file);
     });
 
-    // キャンバスタップ時の処理
-    canvas.addEventListener('mousedown', handleTap);
+    function setStep(s) {
+        step = s;
+        const ins = document.getElementById('instruction');
+        const st = document.getElementById('status-text');
+        if(s===1) { ins.innerText = "2. 右大腿骨頭の中心付近をタップ"; st.innerText = "右脚待ち"; }
+        if(s===2) { ins.innerText = "3. 左大腿骨頭の中心付近をタップ"; st.innerText = "左脚待ち"; }
+        if(s===3) { ins.innerText = "完了！精度はどうですか？"; st.innerText = "全検知完了"; }
+    }
+
+    function resetMarkers() {
+        detectedPoints = [];
+        if(imgLoaded) { drawAll(); setStep(1); }
+    }
+
     canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        if (!imgLoaded || step > 2) return;
         const touch = e.touches[0];
-        handleTap(touch);
+        handleInput(touch.clientX, touch.clientY);
+    }, {passive: false});
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (!imgLoaded || step > 2) return;
+        handleInput(e.clientX, e.clientY);
     });
 
-    function handleTap(e) {
-        if (!imgLoaded) return;
-
-        // タップ座標を画像上の座標に変換
+    function handleInput(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        const tapX = (e.clientX - rect.left) * scaleX;
-        const tapY = (e.clientY - rect.top) * scaleY;
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const offsetX = (canvas.width - img.width * scale) / 2;
+        const offsetY = (canvas.height - img.height * scale) / 2;
 
-        // 精密化（タップ地点の周囲をスキャン）
-        const refinedPt = refineCenter(tapX, tapY);
+        // 画像上の座標に変換
+        const imgX = (clientX - rect.left - offsetX) / scale;
+        const imgY = (clientY - rect.top - offsetY) / scale;
 
-        // 結果描画
-        drawResult(refinedPt);
+        // 精密化（スキャン）
+        const refined = refineCenter(imgX, imgY);
+        detectedPoints.push({ x: refined.x, y: refined.y, label: step === 1 ? "RH" : "LH" });
+        
+        drawAll();
+        setStep(step + 1);
     }
 
     function refineCenter(tx, ty) {
-        const scanSize = 60; // タップした周り 60px をスキャン
+        const scanSize = 60;
         const temp = document.createElement('canvas');
         temp.width = scanSize; temp.height = scanSize;
         const tCtx = temp.getContext('2d');
-        
-        // 周辺画像を取得
         tCtx.drawImage(img, tx - scanSize/2, ty - scanSize/2, scanSize, scanSize, 0, 0, scanSize, scanSize);
         const data = tCtx.getImageData(0,0,scanSize,scanSize).data;
 
-        let weightedX = 0, weightedY = 0, totalWeight = 0;
-        let maxB = 0;
-
-        // 1. エリア内の最大輝度を確認
+        let weightedX = 0, weightedY = 0, totalWeight = 0, maxB = 0;
         for(let i=0; i<data.length; i+=4) {
-            let b = data[i] + data[i+1] + data[i+2];
+            let b = data[i]+data[i+1]+data[i+2];
             if(b > maxB) maxB = b;
         }
-
-        // 2. 輝度に基づく重心計算（骨の厚い「中心」に吸い寄せる）
-        const threshold = maxB * 0.9; // 上位10%の明るい部分（骨）のみ抽出
+        const threshold = maxB * 0.9;
         for(let y=0; y<scanSize; y++) {
             for(let x=0; x<scanSize; x++) {
                 let i = (y * scanSize + x) * 4;
-                let b = data[i] + data[i+1] + data[i+2];
-                if(b > threshold) {
+                if(data[i]+data[i+1]+data[i+2] > threshold) {
                     weightedX += x; weightedY += y; totalWeight++;
                 }
             }
         }
-
         if(totalWeight === 0) return { x: tx, y: ty };
-        
-        return {
-            x: tx - scanSize/2 + (weightedX / totalWeight),
-            y: ty - scanSize/2 + (weightedY / totalWeight)
-        };
+        return { x: tx - scanSize/2 + (weightedX / totalWeight), y: ty - scanSize/2 + (weightedY / totalWeight) };
     }
 
-    function drawResult(pt) {
-        // 画像をクリアしてから再描画（古い十字を消す）
-        ctx.drawImage(img, 0, 0);
-        
-        // 精密検知した点にターゲットを描画
-        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 30, 0, Math.PI*2); // 外周
-        ctx.stroke();
-        
-        ctx.beginPath(); // 十字
-        ctx.moveTo(pt.x - 40, pt.y); ctx.lineTo(pt.x + 40, pt.y);
-        ctx.moveTo(pt.x, pt.y - 40); ctx.lineTo(pt.x, pt.y + 40);
-        ctx.stroke();
+    function drawAll() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const offsetX = (canvas.width - img.width * scale) / 2;
+        const offsetY = (canvas.height - img.height * scale) / 2;
 
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 35px sans-serif";
-        ctx.fillText("BULLSEYE", pt.x + 45, pt.y - 45);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+
+        detectedPoints.forEach(pt => {
+            ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 4 / scale;
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, 30 / scale, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pt.x - 40/scale, pt.y); ctx.lineTo(pt.x + 40/scale, pt.y);
+            ctx.moveTo(pt.x, pt.y - 40/scale); ctx.lineTo(pt.x, pt.y + 40/scale);
+            ctx.stroke();
+            ctx.fillStyle = "#00FF00"; ctx.font = `bold ${30/scale}px sans-serif`;
+            ctx.fillText(pt.label, pt.x + 45/scale, pt.y - 45/scale);
+        });
+        ctx.restore();
     }
 </script>
 </body>

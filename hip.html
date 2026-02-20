@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hip Center Detector Study V2</title>
+    <title>Hip Detector Study V3</title>
     <style>
-        body { margin: 0; background: #111; color: #eee; font-family: sans-serif; text-align: center; }
+        body { margin: 0; background: #000; color: #eee; font-family: sans-serif; text-align: center; }
         #container { position: relative; display: inline-block; margin-top: 10px; border: 1px solid #444; }
         canvas { max-width: 95vw; max-height: 75vh; display: block; }
         .ui { padding: 15px; }
-        button { padding: 12px 24px; font-weight: bold; background: #34C759; color: white; border: none; border-radius: 8px; }
-        .status { margin-top: 10px; color: #FF9500; font-size: 14px; font-weight: bold; }
+        button { padding: 12px 24px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; }
+        .status { margin-top: 10px; color: #34C759; font-size: 14px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="ui">
-    <h3>大腿骨頭検知テスト V2（円形検知強化版）</h3>
+    <h3>大腿骨頭検知テスト V3（円形相関法）</h3>
     <input type="file" id="upload" accept="image/*">
-    <button onclick="runDetection()">再解析する</button>
+    <button onclick="runDetection()">精密解析を開始</button>
     <div id="status" class="status">画像を読み込んでください</div>
 </div>
 
@@ -37,10 +37,9 @@
         const reader = new FileReader();
         reader.onload = (f) => {
             img.onload = () => {
-                canvas.width = img.width;
-                canvas.height = img.height;
+                canvas.width = img.width; canvas.height = img.height;
                 ctx.drawImage(img, 0, 0);
-                status.innerText = "画像読込完了。解析ボタンを押してください。";
+                status.innerText = "準備完了。精密解析ボタンを押してください。";
             };
             img.src = f.target.result;
         };
@@ -49,60 +48,69 @@
 
     function runDetection() {
         if (!img.src) return;
-        status.innerText = "解析中...";
+        status.innerText = "円形オブジェクトを探索中...";
         
-        const sw = 300, sh = 300;
+        const sw = 200, sh = 200; // 高速化のため内部解像度を調整
         const temp = document.createElement('canvas'); temp.width = sw; temp.height = sh;
         const tCtx = temp.getContext('2d');
         tCtx.drawImage(img, 0, 0, sw, sh);
-        const data = tCtx.getImageData(0,0,sw,sh).data;
+        const d = tCtx.getImageData(0,0,sw,sh).data;
 
-        // V2: 円形パターンマッチングを簡略化した重心計算
-        const findHipV2 = (xRange, yRange) => {
-            let bestX = 0, bestY = 0, maxScore = -1000;
+        // V3: 円形度スキャン（周囲が暗く、中心が明るい球体を探す）
+        const findHipV3 = (xRange, yRange) => {
+            let bestX = 0, bestY = 0, maxScore = -100000;
+            const r = 12; // 探索する骨頭の推定半径
             
-            // 探索範囲を少し広げ、かつ深めに設定
-            for(let y=yRange[0]; y<yRange[1]; y+=2){
-                for(let x=xRange[0]; x<xRange[1]; x+=2){
+            for(let y=yRange[0]; y<yRange[1]; y++){
+                for(let x=xRange[0]; x<xRange[1]; x++){
                     let i = (y*sw + x)*4;
-                    let centerB = data[i]+data[i+1]+data[i+2];
+                    let coreB = d[i]+d[i+1]+d[i+2];
                     
-                    // 周囲（関節裂隙を想定）との輝度差をチェック
-                    // 中心が明るく、少し離れた周囲が暗い場所を「骨頭」とみなす
-                    let offset = 8;
-                    let surroundB = 0;
-                    let samples = [[0,offset], [0,-offset], [offset,0], [-offset,0]];
-                    samples.forEach(s => {
-                        let si = ((y+s[1])*sw + (x+s[0]))*4;
-                        surroundB += data[si]+data[si+1]+data[si+2];
-                    });
+                    // 円周上の輝度をサンプリング
+                    let edgeB = 0;
+                    let samples = 8;
+                    for(let a=0; a<Math.PI*2; a += Math.PI*2/samples) {
+                        let ex = Math.round(x + Math.cos(a)*r);
+                        let ey = Math.round(y + Math.sin(a)*r);
+                        if(ex>=0 && ex<sw && ey>=0 && ey<sh) {
+                            let ei = (ey*sw + ex)*4;
+                            edgeB += d[ei]+d[ei+1]+d[ei+2];
+                        }
+                    }
                     
-                    let score = centerB - (surroundB / 4);
-                    if(score > maxScore) { maxScore = score; bestX = x; bestY = y; }
+                    // スコア = 中心輝度 - 周辺（関節裂隙）輝度
+                    // これにより「白く丸い塊」を強調
+                    let score = coreB * 2 - (edgeB / samples);
+                    
+                    if(score > maxScore) {
+                        maxScore = score; bestX = x; bestY = y;
+                    }
                 }
             }
             return { x: bestX/sw * img.width, y: bestY/sh * img.height };
         };
 
-        // 探索エリアを前回の失敗を踏まえて下方・ワイドに調整
-        // xRange, yRange は 300x300 canvas 内の座標
-        const rightHip = findHipV2([50, 130], [50, 140]); // 画面左側の脚
-        const leftHip = findHipV2([170, 250], [50, 140]);  // 画面右側の脚
+        // 探索エリアを「画像中央付近」に限定（端のノイズを完全無視）
+        // 200x200の内部座標系
+        const rightHip = findHipV3([30, 90], [30, 80]); // 画面左（右脚）
+        const leftHip = findHipV3([110, 170], [30, 80]); // 画面右（左脚）
 
         ctx.drawImage(img, 0, 0);
-        drawMark(rightHip, "RH (V2)");
-        drawMark(leftHip, "LH (V2)");
-        status.innerText = "検知完了。赤の点に近づきましたか？";
+        drawResult(rightHip, "Detected RH");
+        drawResult(leftHip, "Detected LH");
+        status.innerText = "解析完了。赤い点に重なりましたか？";
     }
 
-    function drawMark(pt, label) {
-        if(!pt) return;
-        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 8;
+    function drawResult(pt, label) {
+        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 25, 0, Math.PI*2); // 丸で囲む
+        ctx.arc(pt.x, pt.y, 35, 0, Math.PI*2); // 骨頭を囲む
         ctx.stroke();
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 45px sans-serif";
-        ctx.fillText(label, pt.x - 80, pt.y - 60);
+        ctx.beginPath(); // 中心点
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI*2);
+        ctx.fillStyle = "#00FF00"; ctx.fill();
+        ctx.font = "bold 40px sans-serif";
+        ctx.fillText(label, pt.x - 100, pt.y - 60);
     }
 </script>
 </body>

@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Precision Hip Finder V4.1</title>
+    <title>Zoom & Precision Hip Finder V4.2</title>
     <style>
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; text-align: center; overflow: hidden; touch-action: none; }
-        #canvas-container { position: relative; width: 100vw; height: 75vh; cursor: crosshair; background: #111; }
+        #canvas-container { position: relative; width: 100vw; height: 80vh; background: #111; }
         canvas { display: block; }
-        .ui { padding: 15px; background: #1a1a1a; border-bottom: 1px solid #333; }
-        .guide { font-size: 13px; color: #34C759; margin-bottom: 8px; font-weight: bold; }
-        .controls { padding: 10px; display: flex; justify-content: center; gap: 10px; }
-        button { padding: 12px 20px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; font-size: 14px; }
+        .ui { padding: 10px; background: #1a1a1a; border-bottom: 1px solid #333; }
+        .guide { font-size: 13px; color: #34C759; font-weight: bold; margin-bottom: 5px; }
+        .controls { padding: 5px; display: flex; justify-content: center; gap: 10px; }
+        button { padding: 10px 18px; font-weight: bold; background: #007AFF; color: white; border: none; border-radius: 8px; font-size: 13px; }
         .reset-btn { background: #FF3B30; }
     </style>
 </head>
@@ -29,7 +29,7 @@
 </div>
 
 <div class="controls">
-    <div id="status-text" style="font-size: 12px; color: #aaa;">待機中...</div>
+    <div id="status-text" style="font-size: 12px; color: #aaa;">ズーム・移動してからタップしてください</div>
 </div>
 
 <script>
@@ -37,8 +37,15 @@
     const ctx = canvas.getContext('2d');
     let img = new Image();
     let imgLoaded = false;
-    let detectedPoints = []; // 検出した点を保存
-    let step = 0; // 0:読込前, 1:右脚待ち, 2:左脚待ち
+    let detectedPoints = [];
+    let step = 0; 
+
+    // ズーム・移動用変数
+    let scale = 1, offsetX = 0, offsetY = 0;
+    let lastDist = 0, lastX = 0, lastY = 0;
+    let isDragging = false;
+    let moveThreshold = 5; // タップか移動かを判定する閾値
+    let startX = 0, startY = 0;
 
     document.getElementById('upload').addEventListener('change', (e) => {
         const file = e.target.files[0];
@@ -47,7 +54,10 @@
             img.onload = () => {
                 imgLoaded = true;
                 canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight * 0.75;
+                canvas.height = window.innerHeight * 0.8;
+                scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                offsetX = (canvas.width - img.width * scale) / 2;
+                offsetY = (canvas.height - img.height * scale) / 2;
                 drawAll();
                 setStep(1);
             };
@@ -59,10 +69,9 @@
     function setStep(s) {
         step = s;
         const ins = document.getElementById('instruction');
-        const st = document.getElementById('status-text');
-        if(s===1) { ins.innerText = "2. 右大腿骨頭の中心付近をタップ"; st.innerText = "右脚待ち"; }
-        if(s===2) { ins.innerText = "3. 左大腿骨頭の中心付近をタップ"; st.innerText = "左脚待ち"; }
-        if(s===3) { ins.innerText = "完了！精度はどうですか？"; st.innerText = "全検知完了"; }
+        if(s===1) ins.innerText = "2. 右大腿骨頭をズームしてタップ";
+        if(s===2) ins.innerText = "3. 左大腿骨頭をズームしてタップ";
+        if(s>=3) ins.innerText = "完了！リセットでやり直し";
     }
 
     function resetMarkers() {
@@ -70,29 +79,56 @@
         if(imgLoaded) { drawAll(); setStep(1); }
     }
 
-    canvas.addEventListener('touchstart', (e) => {
+    // タッチイベント処理
+    canvas.addEventListener('touchstart', e => {
         e.preventDefault();
-        if (!imgLoaded || step > 2) return;
-        const touch = e.touches[0];
-        handleInput(touch.clientX, touch.clientY);
+        if (e.touches.length === 2) {
+            lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+        } else {
+            const t = e.touches[0];
+            lastX = t.clientX; lastY = t.clientY;
+            startX = t.clientX; startY = t.clientY;
+            isDragging = false;
+        }
     }, {passive: false});
 
-    canvas.addEventListener('mousedown', (e) => {
-        if (!imgLoaded || step > 2) return;
-        handleInput(e.clientX, e.clientY);
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (e.touches.length === 2) {
+            const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+            const zoom = dist / lastDist;
+            const midX = (e.touches[0].pageX + e.touches[1].pageX) / 2;
+            const midY = (e.touches[0].pageY + e.touches[1].pageY) / 2;
+            offsetX = midX - (midX - offsetX) * zoom;
+            offsetY = midY - (midY - offsetY) * zoom;
+            scale *= zoom;
+            lastDist = dist;
+        } else {
+            const t = e.touches[0];
+            const dx = t.clientX - lastX;
+            const dy = t.clientY - lastY;
+            if (Math.hypot(t.clientX - startX, t.clientY - startY) > moveThreshold) {
+                isDragging = true;
+                offsetX += dx;
+                offsetY += dy;
+            }
+            lastX = t.clientX; lastY = t.clientY;
+        }
+        drawAll();
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', e => {
+        if (!isDragging && imgLoaded && step <= 2) {
+            handleInput(startX, startY);
+        }
     });
 
     function handleInput(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
-        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-        const offsetX = (canvas.width - img.width * scale) / 2;
-        const offsetY = (canvas.height - img.height * scale) / 2;
-
-        // 画像上の座標に変換
+        // 表示座標を画像座標に逆変換
         const imgX = (clientX - rect.left - offsetX) / scale;
         const imgY = (clientY - rect.top - offsetY) / scale;
 
-        // 精密化（スキャン）
         const refined = refineCenter(imgX, imgY);
         detectedPoints.push({ x: refined.x, y: refined.y, label: step === 1 ? "RH" : "LH" });
         
@@ -101,7 +137,7 @@
     }
 
     function refineCenter(tx, ty) {
-        const scanSize = 60;
+        const scanSize = 80; // スキャン範囲を少し拡大
         const temp = document.createElement('canvas');
         temp.width = scanSize; temp.height = scanSize;
         const tCtx = temp.getContext('2d');
@@ -127,28 +163,31 @@
     }
 
     function drawAll() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-        const offsetX = (canvas.width - img.width * scale) / 2;
-        const offsetY = (canvas.height - img.height * scale) / 2;
+        if(!imgLoaded) return;
 
-        ctx.save();
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0);
 
         detectedPoints.forEach(pt => {
             ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 4 / scale;
-            ctx.beginPath(); ctx.arc(pt.x, pt.y, 30 / scale, 0, Math.PI*2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(pt.x, pt.y, 25 / scale, 0, Math.PI*2); ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(pt.x - 40/scale, pt.y); ctx.lineTo(pt.x + 40/scale, pt.y);
-            ctx.moveTo(pt.x, pt.y - 40/scale); ctx.lineTo(pt.x, pt.y + 40/scale);
+            ctx.moveTo(pt.x - 35/scale, pt.y); ctx.lineTo(pt.x + 35/scale, pt.y);
+            ctx.moveTo(pt.x, pt.y - 35/scale); ctx.lineTo(pt.x, pt.y + 35/scale);
             ctx.stroke();
-            ctx.fillStyle = "#00FF00"; ctx.font = `bold ${30/scale}px sans-serif`;
-            ctx.fillText(pt.label, pt.x + 45/scale, pt.y - 45/scale);
+            ctx.fillStyle = "#00FF00"; ctx.font = `bold ${24/scale}px sans-serif`;
+            ctx.fillText(pt.label, pt.x + 30/scale, pt.y - 30/scale);
         });
-        ctx.restore();
     }
+
+    window.onresize = () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight * 0.8;
+        drawAll();
+    };
 </script>
 </body>
 </html>

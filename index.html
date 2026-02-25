@@ -2,19 +2,19 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Alignment Pro V31 Stable</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X-ray Pro V32 - Desktop Edition</title>
     <style>
-        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
-        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; font-size: 10px; border-bottom: 1px solid #444; }
-        .row { display: flex; justify-content: space-around; padding: 4px 0; border-bottom: 1px solid #222; }
-        .val { color: #007AFF; font-weight: bold; font-size: 12px; }
-        #canvas-container { position: relative; width: 100vw; height: 100vh; }
-        canvas { display: block; }
-        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 95%; }
-        button { padding: 10px 12px; border-radius: 8px; border: none; background: #007AFF; color: #fff; font-weight: bold; font-size: 12px; }
-        .auto-btn { background: #34C759; }
-        .save-btn { background: #FF9500; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #000; color: #fff; overflow: hidden; }
+        #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; border-bottom: 1px solid #444; }
+        .row { display: flex; justify-content: space-around; padding: 8px 0; border-bottom: 1px solid #222; }
+        .val { color: #007AFF; font-weight: bold; font-size: 14px; }
+        #canvas-container { width: 100vw; height: 100vh; cursor: crosshair; }
+        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 10px; }
+        button { padding: 10px 18px; border-radius: 6px; border: none; background: #333; color: #fff; font-weight: bold; cursor: pointer; border: 1px solid #555; }
+        button:hover { background: #444; }
+        .primary-btn { background: #007AFF; border: none; }
+        .excel-btn { background: #217346; border: none; }
     </style>
 </head>
 <body>
@@ -41,27 +41,26 @@
 </div>
 
 <div class="controls">
+    <button class="primary-btn" onclick="document.getElementById('upload').click()">画像選択</button>
     <input type="file" id="upload" accept="image/*" style="display:none">
-    <button onclick="document.getElementById('upload').click()">画像読込</button>
-    <button class="auto-btn" onclick="autoDetect()">自動検索</button>
-    <button class="save-btn" onclick="saveAsImage()">画像保存</button>
-    <button class="save-btn" onclick="saveAsCSV()">CSV保存</button>
+    <button class="excel-btn" onclick="copyToExcel()">Excel用にコピー</button>
+    <button onclick="saveAsCSV()">CSV保存</button>
+    <span style="font-size:11px; color:#888; align-self:center;">※Ctrl+Vで画像貼り付け可能</span>
 </div>
 
 <script>
     const canvas = document.getElementById('mainCanvas');
     const ctx = canvas.getContext('2d');
-    const upload = document.getElementById('upload');
     let img = new Image();
     let imgLoaded = false;
     let scale = 1, offsetX = 0, offsetY = 0;
     let points = []; 
     let activePoint = null;
-    let lastDist = 0, lastX = 0, lastY = 0;
-    const dragOffsetY = -45;
+    let isPanning = false;
+    let lastMouseX = 0, lastMouseY = 0;
 
+    // V31の完璧なポイント配置を継承
     function initPoints() {
-        if (!imgLoaded) return;
         const w = img.width, h = img.height;
         points = [
             { x: w * 0.1, y: h * 0.9, label: 'G1', color: 'white' }, { x: w * 0.9, y: h * 0.9, label: 'G2', color: 'white' },
@@ -76,28 +75,37 @@
         ];
     }
 
-    upload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (f) => {
-            img = new Image();
-            img.onload = () => {
-                imgLoaded = true;
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
-                scale = Math.min(canvas.width / img.width, canvas.height / img.height);
-                offsetX = (canvas.width - img.width * scale) / 2;
-                offsetY = (canvas.height - img.height * scale) / 2;
-                initPoints();
-                draw();
-            };
-            img.onerror = () => alert("画像の展開に失敗しました。ファイル形式を確認してください。");
-            img.src = f.target.result;
-        };
-        reader.onerror = () => alert("ファイルの読み込みに失敗しました。");
-        reader.readAsDataURL(file);
+    // クリップボードからの貼り付け対応
+    window.addEventListener('paste', e => {
+        const items = e.clipboardData.items;
+        for (let item of items) {
+            if (item.type.indexOf("image") !== -1) {
+                const blob = item.getAsFile();
+                const reader = new FileReader();
+                reader.onload = f => { loadImage(f.target.result); };
+                reader.readAsDataURL(blob);
+            }
+        }
     });
+
+    document.getElementById('upload').addEventListener('change', e => {
+        const reader = new FileReader();
+        reader.onload = f => { loadImage(f.target.result); };
+        reader.readAsDataURL(e.target.files[0]);
+    });
+
+    function loadImage(src) {
+        img = new Image();
+        img.onload = () => {
+            imgLoaded = true;
+            resizeCanvas();
+            scale = Math.min(canvas.width / img.width, canvas.height / img.height) * 0.8;
+            offsetX = (canvas.width - img.width * scale) / 2;
+            offsetY = (canvas.height - img.height * scale) / 2;
+            initPoints(); draw();
+        };
+        img.src = src;
+    }
 
     function draw() {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -106,29 +114,29 @@
         ctx.translate(offsetX, offsetY);
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0);
-        ctx.lineWidth = 3 / scale;
-        drawLine(points[0], points[1], 'white'); 
+        
+        // 補助線描画
+        ctx.lineWidth = 2 / scale;
+        drawLine(points[0], points[1], 'rgba(255,255,255,0.5)'); 
         [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
             drawLine(points[o+0], points[o+1], '#FF3B30'); drawLine(points[o+2], points[o+3], '#5856D6'); 
             drawLine(points[o+4], points[o+5], '#FFCC00'); drawLine(points[o+6], points[o+7], '#34C759'); 
         });
+
+        // 参照点
         points.forEach(p => {
-            ctx.beginPath(); ctx.arc(p.x, p.y, 6 / scale, 0, Math.PI*2);
+            ctx.beginPath(); ctx.arc(p.x, p.y, 5 / scale, 0, Math.PI*2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
-            ctx.fill(); ctx.strokeStyle = "black"; ctx.lineWidth = 1/scale; ctx.stroke();
+            ctx.fill();
         });
-        if (activePoint) drawLoupe();
         calculateAngles();
     }
 
-    function drawLine(p1, p2, color) {
-        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = color; ctx.stroke();
-    }
+    function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
 
     function calculateAngles() {
         const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
-        const norm = (deg) => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
+        const norm = deg => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
         const lineDiff = (a1, a2) => { let d = norm(a1 - a2); if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
 
         const calc = (o, side) => {
@@ -140,95 +148,78 @@
             const axisKA = getRad(points[o+1], points[o+3]);
 
             let hka = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI);
-            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
-
             let ldfaRaw = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
-            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
-
             let mptaRaw = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
-            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(mptaRaw)).toFixed(1);
-
             let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
-            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
-
             let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
+
+            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
+            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(mptaRaw)).toFixed(1);
+            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
             document.getElementById(side+'-jloa').innerText = (side === 'r' ? -jloa : jloa).toFixed(1);
         };
         try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
     }
 
-    function autoDetect() {
-        if (!imgLoaded) return;
-        const temp = document.createElement('canvas'); temp.width = 100; temp.height = 100;
-        const tCtx = temp.getContext('2d'); tCtx.drawImage(img, 0, 0, 100, 100);
-        const d = tCtx.getImageData(0,0,100,100).data;
-        const findCenter = (y1, y2, x1, x2, sens = 450) => {
-            let tx=0, ty=0, count=0, maxB=0;
-            for(let y=y1; y<y2; y++){ for(let x=x1; x<x2; x++){ let i=(y*100+x)*4; let b = d[i]+d[i+1]+d[i+2]; if(b > maxB) maxB = b; } }
-            let threshold = Math.max(sens, maxB * 0.85); 
-            for(let y=y1; y<y2; y++) { for(let x=x1; x<x2; x++) { let i=(y*100+x)*4; if(d[i]+d[i+1]+d[i+2] > threshold){ tx+=x; ty+=y; count++; } } }
-            return count > 0 ? { x: (tx/count)/100 * img.width, y: (ty/count)/100 * img.height } : null;
-        };
-        const rH = findCenter(10, 25, 20, 45); if(rH){ points[2].x = rH.x; points[2].y = rH.y; }
-        const lH = findCenter(10, 25, 55, 80); if(lH){ points[10].x = lH.x; points[10].y = lH.y; }
-        const rK = findCenter(40, 55, 25, 45); if(rK){ points[3].x=rK.x; points[3].y=rK.y; points[4].x=rK.x; points[4].y=rK.y+50; }
-        const rA = findCenter(75, 95, 25, 45); if(rA){ points[5].x=rA.x; points[5].y=rA.y; }
-        const lK = findCenter(40, 55, 55, 75); if(lK){ points[11].x=lK.x; points[11].y=lK.y; points[12].x=lK.x; points[12].y=lK.y+50; }
-        const lA = findCenter(75, 95, 55, 75); if(lA){ points[13].x=lA.x; points[13].y=lA.y; }
+    // マウス操作
+    canvas.onmousedown = e => {
+        const mx = (e.clientX - offsetX) / scale;
+        const my = (e.clientY - offsetY) / scale;
+        activePoint = points.find(p => Math.hypot(p.x - mx, p.y - my) < 15 / scale);
+        if (!activePoint && (e.button === 2 || e.ctrlKey)) isPanning = true;
+        lastMouseX = e.clientX; lastMouseY = e.clientY;
+    };
+
+    window.onmousemove = e => {
+        if (activePoint) {
+            activePoint.x = (e.clientX - offsetX) / scale;
+            activePoint.y = (e.clientY - offsetY) / scale;
+            draw();
+        } else if (isPanning) {
+            offsetX += (e.clientX - lastMouseX);
+            offsetY += (e.clientY - lastMouseY);
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+            draw();
+        }
+    };
+
+    window.onmouseup = () => { activePoint = null; isPanning = false; };
+    canvas.oncontextmenu = e => e.preventDefault();
+
+    // ホイールズーム
+    canvas.onwheel = e => {
+        e.preventDefault();
+        const zoom = e.deltaY > 0 ? 0.9 : 1.1;
+        const mx = e.clientX, my = e.clientY;
+        offsetX = mx - (mx - offsetX) * zoom;
+        offsetY = my - (my - offsetY) * my * zoom; // 簡易調整
+        scale *= zoom;
         draw();
-    }
+    };
 
-    function drawLoupe() {
-        const size = 180; const isRight = activePoint.label.startsWith('R');
-        const screenY = activePoint.y * scale + offsetY;
-        let lx = isRight ? window.innerWidth - size - 20 : 20;
-        let ly = (screenY < 250) ? window.innerHeight - size - 120 : 80;
-        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        ctx.beginPath(); ctx.arc(lx + size/2, ly + size/2, size/2, 0, Math.PI*2); ctx.clip();
-        ctx.fillStyle = "#000"; ctx.fillRect(lx, ly, size, size);
-        const zoom = 2.5; const sw = size/zoom/scale;
-        ctx.drawImage(img, activePoint.x - sw/2, activePoint.y - sw/2, sw, sw, lx, ly, size, size);
-        ctx.strokeStyle = "#00FF00"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(lx+size/2, ly); ctx.lineTo(lx+size/2, ly+size); ctx.moveTo(lx, ly+size/2); ctx.lineTo(lx+size, ly+size/2); ctx.stroke();
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(lx, ly + size - 30, size, 30);
-        ctx.fillStyle = "#00FF00"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(activePoint.label, lx + size/2, ly + size - 8);
-        ctx.restore();
-        ctx.strokeStyle = "white"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(lx+size/2, ly+size/2, size/2, 0, Math.PI*2); ctx.stroke();
-    }
-
-    function saveAsImage() {
-        const tempCanvas = document.createElement('canvas'); tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
-        const tCtx = tempCanvas.getContext('2d'); tCtx.drawImage(canvas, 0, 0);
-        tCtx.fillStyle = "rgba(0,0,0,0.8)"; tCtx.fillRect(0, 0, canvas.width, 70);
-        tCtx.fillStyle = "white"; tCtx.font = "bold 14px sans-serif";
-        tCtx.fillText("R-HKA:"+document.getElementById('r-hka').innerText+" LDFA:"+document.getElementById('r-ldfa').innerText+" MPTA:"+document.getElementById('r-mpta').innerText+" JLCA:"+document.getElementById('r-jlca').innerText+" JLOA:"+document.getElementById('r-jloa').innerText, 10, 30);
-        tCtx.fillText("L-HKA:"+document.getElementById('l-hka').innerText+" LDFA:"+document.getElementById('l-ldfa').innerText+" MPTA:"+document.getElementById('l-mpta').innerText+" JLCA:"+document.getElementById('l-jlca').innerText+" JLOA:"+document.getElementById('l-jloa').innerText, 10, 55);
-        const a = document.createElement('a'); a.download = `Xray-Align-${Date.now()}.jpg`; a.href = tempCanvas.toDataURL("image/jpeg", 0.9); a.click();
+    function copyToExcel() {
+        const r = [
+            document.getElementById('r-hka').innerText, document.getElementById('r-ldfa').innerText,
+            document.getElementById('r-mpta').innerText, document.getElementById('r-jlca').innerText, document.getElementById('r-jloa').innerText
+        ];
+        const l = [
+            document.getElementById('l-hka').innerText, document.getElementById('l-ldfa').innerText,
+            document.getElementById('l-mpta').innerText, document.getElementById('l-jlca').innerText, document.getElementById('l-jloa').innerText
+        ];
+        const text = `Leg\tHKA\tLDFA\tMPTA\tJLCA\tJLOA\nRight\t${r.join('\t')}\nLeft\t${l.join('\t')}`;
+        navigator.clipboard.writeText(text).then(() => alert("エクセル形式でコピーしました。"));
     }
 
     function saveAsCSV() {
         let c = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
         ['r','l'].forEach(side => { c += `${side==='r'?'Right':'Left'},${document.getElementById(side+'-hka').innerText},${document.getElementById(side+'-ldfa').innerText},${document.getElementById(side+'-mpta').innerText},${document.getElementById(side+'-jlca').innerText},${document.getElementById(side+'-jloa').innerText}\n`; });
-        const b = new Blob([c], { type: 'text/csv' }); const a = document.createElement('a'); a.download = `Xray-Data-${Date.now()}.csv`; a.href = URL.createObjectURL(b); a.click();
+        const b = new Blob([c], { type: 'text/csv' }); const a = document.createElement('a'); a.download = `Xray-Data.csv`; a.href = URL.createObjectURL(b); a.click();
     }
 
-    canvas.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (e.touches.length === 2) { lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); }
-        else { const t = e.touches[0]; const wX = (t.clientX - offsetX) / scale, wY = (t.clientY - offsetY) / scale; activePoint = points.find(p => Math.hypot(p.x - wX, p.y - wY) < 40 / scale); lastX = t.clientX; lastY = t.clientY; }
-    }, {passive: false});
-
-    canvas.addEventListener('touchmove', e => {
-        e.preventDefault();
-        if (e.touches.length === 2) { const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); const z = dist / lastDist; const mx = (e.touches[0].pageX + e.touches[1].pageX) / 2, my = (e.touches[0].pageY + e.touches[1].pageY) / 2; offsetX = mx - (mx - offsetX) * z; offsetY = my - (my - offsetY) * z; scale *= z; lastDist = dist; }
-        else if (activePoint) { const t = e.touches[0]; activePoint.x = (t.clientX - offsetX) / scale; activePoint.y = (t.clientY + dragOffsetY - offsetY) / scale; }
-        else { const t = e.touches[0]; offsetX += (t.clientX - lastX); offsetY += (t.clientY - lastY); lastX = t.clientX; lastY = t.clientY; }
-        draw();
-    }, {passive: false});
-
-    canvas.addEventListener('touchend', () => { activePoint = null; draw(); });
-    window.onload = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; draw(); };
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.onresize = resizeCanvas;
+    resizeCanvas();
 </script>
 </body>
 </html>

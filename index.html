@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X-ray Pro V32 - Desktop Edition</title>
+    <title>X-ray Pro V33 - Professional Desktop</title>
     <style>
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #000; color: #fff; overflow: hidden; }
+        body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background: #000; color: #fff; overflow: hidden; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; border-bottom: 1px solid #444; }
         .row { display: flex; justify-content: space-around; padding: 8px 0; border-bottom: 1px solid #222; }
         .val { color: #007AFF; font-weight: bold; font-size: 14px; }
         #canvas-container { width: 100vw; height: 100vh; cursor: crosshair; }
         .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 10px; }
-        button { padding: 10px 18px; border-radius: 6px; border: none; background: #333; color: #fff; font-weight: bold; cursor: pointer; border: 1px solid #555; }
+        button { padding: 10px 18px; border-radius: 6px; border: none; background: #333; color: #fff; font-weight: bold; cursor: pointer; border: 1px solid #555; font-size: 13px; }
         button:hover { background: #444; }
         .primary-btn { background: #007AFF; border: none; }
         .excel-btn { background: #217346; border: none; }
@@ -45,7 +45,7 @@
     <input type="file" id="upload" accept="image/*" style="display:none">
     <button class="excel-btn" onclick="copyToExcel()">Excel用にコピー</button>
     <button onclick="saveAsCSV()">CSV保存</button>
-    <span style="font-size:11px; color:#888; align-self:center;">※Ctrl+Vで画像貼り付け可能</span>
+    <span style="font-size:11px; color:#aaa; align-self:center;">※⌘+V(Mac) / Ctrl+V(PC) で画像貼り付け</span>
 </div>
 
 <script>
@@ -59,7 +59,6 @@
     let isPanning = false;
     let lastMouseX = 0, lastMouseY = 0;
 
-    // V31の完璧なポイント配置を継承
     function initPoints() {
         const w = img.width, h = img.height;
         points = [
@@ -75,15 +74,14 @@
         ];
     }
 
-    // クリップボードからの貼り付け対応
+    // クリップボード貼り付け (Mac: Cmd+V / Win: Ctrl+V)
     window.addEventListener('paste', e => {
         const items = e.clipboardData.items;
         for (let item of items) {
             if (item.type.indexOf("image") !== -1) {
-                const blob = item.getAsFile();
                 const reader = new FileReader();
                 reader.onload = f => { loadImage(f.target.result); };
-                reader.readAsDataURL(blob);
+                reader.readAsDataURL(item.getAsFile());
             }
         }
     });
@@ -115,7 +113,6 @@
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0);
         
-        // 補助線描画
         ctx.lineWidth = 2 / scale;
         drawLine(points[0], points[1], 'rgba(255,255,255,0.5)'); 
         [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
@@ -123,7 +120,6 @@
             drawLine(points[o+4], points[o+5], '#FFCC00'); drawLine(points[o+6], points[o+7], '#34C759'); 
         });
 
-        // 参照点
         points.forEach(p => {
             ctx.beginPath(); ctx.arc(p.x, p.y, 5 / scale, 0, Math.PI*2);
             ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
@@ -147,22 +143,18 @@
             const ground = getRad(points[0], points[1]);
             const axisKA = getRad(points[o+1], points[o+3]);
 
-            let hka = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI);
-            let ldfaRaw = norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI);
-            let mptaRaw = norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI);
+            document.getElementById(side+'-hka').innerText = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI).toFixed(1);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI)).toFixed(1);
+            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI))).toFixed(1);
             let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
-            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
-
-            document.getElementById(side+'-hka').innerText = hka.toFixed(1);
-            document.getElementById(side+'-ldfa').innerText = Math.abs(ldfaRaw).toFixed(1);
-            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(mptaRaw)).toFixed(1);
             document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
+            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
             document.getElementById(side+'-jloa').innerText = (side === 'r' ? -jloa : jloa).toFixed(1);
         };
         try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
     }
 
-    // マウス操作
+    // マウス操作系
     canvas.onmousedown = e => {
         const mx = (e.clientX - offsetX) / scale;
         const my = (e.clientY - offsetY) / scale;
@@ -187,37 +179,34 @@
     window.onmouseup = () => { activePoint = null; isPanning = false; };
     canvas.oncontextmenu = e => e.preventDefault();
 
-    // ホイールズーム
+    // ズーム（Macトラックパッド・マウスホイール完全対応）
     canvas.onwheel = e => {
         e.preventDefault();
-        const zoom = e.deltaY > 0 ? 0.9 : 1.1;
-        const mx = e.clientX, my = e.clientY;
+        const zoom = e.deltaY > 0 ? 0.95 : 1.05; // 5%ずつズーム
+        const mx = e.clientX;
+        const my = e.clientY;
+
+        // カーソル位置を起点にズーム
         offsetX = mx - (mx - offsetX) * zoom;
-        offsetY = my - (my - offsetY) * my * zoom; // 簡易調整
+        offsetY = my - (my - offsetY) * zoom; // V32のバグを修正
         scale *= zoom;
         draw();
     };
 
     function copyToExcel() {
-        const r = [
-            document.getElementById('r-hka').innerText, document.getElementById('r-ldfa').innerText,
-            document.getElementById('r-mpta').innerText, document.getElementById('r-jlca').innerText, document.getElementById('r-jloa').innerText
-        ];
-        const l = [
-            document.getElementById('l-hka').innerText, document.getElementById('l-ldfa').innerText,
-            document.getElementById('l-mpta').innerText, document.getElementById('l-jlca').innerText, document.getElementById('l-jloa').innerText
-        ];
+        const r = [document.getElementById('r-hka').innerText, document.getElementById('r-ldfa').innerText, document.getElementById('r-mpta').innerText, document.getElementById('r-jlca').innerText, document.getElementById('r-jloa').innerText];
+        const l = [document.getElementById('l-hka').innerText, document.getElementById('l-ldfa').innerText, document.getElementById('l-mpta').innerText, document.getElementById('l-jlca').innerText, document.getElementById('l-jloa').innerText];
         const text = `Leg\tHKA\tLDFA\tMPTA\tJLCA\tJLOA\nRight\t${r.join('\t')}\nLeft\t${l.join('\t')}`;
-        navigator.clipboard.writeText(text).then(() => alert("エクセル形式でコピーしました。"));
+        navigator.clipboard.writeText(text).then(() => alert("Excel形式でコピーしました。そのままExcelへ貼り付けられます。"));
     }
 
     function saveAsCSV() {
         let c = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
         ['r','l'].forEach(side => { c += `${side==='r'?'Right':'Left'},${document.getElementById(side+'-hka').innerText},${document.getElementById(side+'-ldfa').innerText},${document.getElementById(side+'-mpta').innerText},${document.getElementById(side+'-jlca').innerText},${document.getElementById(side+'-jloa').innerText}\n`; });
-        const b = new Blob([c], { type: 'text/csv' }); const a = document.createElement('a'); a.download = `Xray-Data.csv`; a.href = URL.createObjectURL(b); a.click();
+        const a = document.createElement('a'); a.download = `Xray-Data.csv`; a.href = URL.createObjectURL(new Blob([c], { type: 'text/csv' })); a.click();
     }
 
-    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; if(imgLoaded) draw(); }
     window.onresize = resizeCanvas;
     resizeCanvas();
 </script>

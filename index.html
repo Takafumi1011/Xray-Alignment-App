@@ -2,18 +2,17 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>X-ray Pro V35 - Ultimate Stable</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X-ray Pro V36 - Mac Absolute Stable</title>
     <style>
-        body { margin: 0; font-family: -apple-system, sans-serif; background: #000; color: #fff; overflow: hidden; touch-action: none; }
+        body { margin: 0; font-family: sans-serif; background: #000; color: #fff; overflow: hidden; }
         #header { position: absolute; top: 0; width: 100%; background: rgba(0,0,0,0.9); z-index: 100; border-bottom: 1px solid #444; }
-        .row { display: flex; justify-content: space-around; padding: 6px 0; border-bottom: 1px solid #222; }
+        .row { display: flex; justify-content: space-around; padding: 5px 0; border-bottom: 1px solid #222; }
         .val { color: #007AFF; font-weight: bold; font-size: 13px; }
-        #canvas-container { width: 100vw; height: 100vh; }
+        #canvas-container { width: 100vw; height: 100vh; background: #111; }
         canvas { display: block; }
-        .controls { position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 10px; }
-        button { padding: 12px 18px; border-radius: 8px; border: none; background: #333; color: #fff; font-weight: bold; cursor: pointer; font-size: 13px; }
-        .primary-btn { background: #007AFF; }
+        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 10px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 10px; }
+        button { padding: 12px 20px; border-radius: 5px; border: none; background: #007AFF; color: #fff; font-weight: bold; cursor: pointer; }
         .excel-btn { background: #217346; }
     </style>
 </head>
@@ -41,8 +40,7 @@
 </div>
 
 <div class="controls">
-    <input type="file" id="upload" accept="image/*" style="display:none">
-    <button class="primary-btn" onclick="document.getElementById('upload').click()">画像読込</button>
+    <input type="file" id="upload" accept="image/*">
     <button class="excel-btn" onclick="copyToExcel()">Excel用コピー</button>
     <button onclick="resetView()">全体表示</button>
 </div>
@@ -57,6 +55,15 @@
     let activePoint = null;
     let isPanning = false;
     let lastMouseX = 0, lastMouseY = 0;
+
+    // 初期化とリサイズ
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        if(imgLoaded) draw();
+    }
+    window.onresize = resize;
+    resize();
 
     function initPoints() {
         const w = img.width, h = img.height;
@@ -73,19 +80,21 @@
         ];
     }
 
-    // 貼り付けイベント
-    window.addEventListener('paste', e => {
-        const clipboardItems = e.clipboardData.items;
-        for (let item of clipboardItems) {
-            if (item.type.startsWith('image')) {
-                const blob = item.getAsFile();
-                const reader = new FileReader();
-                reader.onload = f => loadImage(f.target.result);
-                reader.readAsDataURL(blob);
-            }
-        }
-    });
+    // 画像読み込みコアロジック
+    function loadImage(src) {
+        img = new Image();
+        img.onload = () => {
+            imgLoaded = true;
+            scale = Math.min(canvas.width / img.width, (canvas.height - 150) / img.height) * 0.9;
+            offsetX = (canvas.width - img.width * scale) / 2;
+            offsetY = (canvas.height - img.height * scale) / 2 + 40;
+            initPoints();
+            draw();
+        };
+        img.src = src;
+    }
 
+    // ファイル選択
     document.getElementById('upload').onchange = e => {
         const file = e.target.files[0];
         if (file) {
@@ -95,4 +104,96 @@
         }
     };
 
-    function loadImage(src
+    // ペースト (Command+V)
+    window.addEventListener('paste', e => {
+        const items = e.clipboardData.items;
+        for (let item of items) {
+            if (item.type.indexOf("image") !== -1) {
+                const reader = new FileReader();
+                reader.onload = f => loadImage(f.target.result);
+                reader.readAsDataURL(item.getAsFile());
+            }
+        }
+    });
+
+    function draw() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!imgLoaded) {
+            ctx.fillStyle = "#444"; ctx.textAlign = "center";
+            ctx.fillText("ここに画像をペースト(Cmd+V)するか、ファイルを選択してください", canvas.width/2, canvas.height/2);
+            return;
+        }
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+        ctx.lineWidth = 2 / scale;
+        drawLine(points[0], points[1], 'rgba(255,255,255,0.5)'); 
+        [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
+            drawLine(points[o+0], points[o+1], '#FF3B30'); drawLine(points[o+2], points[o+3], '#5856D6'); 
+            drawLine(points[o+4], points[o+5], '#FFCC00'); drawLine(points[o+6], points[o+7], '#34C759'); 
+        });
+        points.forEach(p => {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 6 / scale, 0, Math.PI*2);
+            ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
+            ctx.fill();
+        });
+        calculateAngles();
+    }
+
+    function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
+
+    function calculateAngles() {
+        const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const norm = deg => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
+        const lineDiff = (a1, a2) => { let d = norm(a1 - a2); if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
+        const calc = (o, side) => {
+            const axisF = getRad(points[o+0], points[o+1]), axisT = getRad(points[o+3], points[o+2]);
+            const jointF = getRad(points[o+5], points[o+4]), jointT = getRad(points[o+7], points[o+6]);
+            const ground = getRad(points[0], points[1]), axisKA = getRad(points[o+1], points[o+3]);
+            document.getElementById(side+'-hka').innerText = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI).toFixed(1);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI)).toFixed(1);
+            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI))).toFixed(1);
+            let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
+            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
+            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
+            document.getElementById(side+'-jloa').innerText = (side === 'r' ? -jloa : jloa).toFixed(1);
+        };
+        try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
+    }
+
+    // マウス・タッチ操作
+    canvas.onmousedown = e => {
+        const mx = (e.clientX - offsetX) / scale, my = (e.clientY - offsetY) / scale;
+        activePoint = points.find(p => Math.hypot(p.x - mx, p.y - my) < 20 / scale);
+        if (!activePoint) isPanning = true;
+        lastMouseX = e.clientX; lastMouseY = e.clientY;
+    };
+    window.onmousemove = e => {
+        if (activePoint) { activePoint.x = (e.clientX - offsetX) / scale; activePoint.y = (e.clientY - offsetY) / scale; draw(); }
+        else if (isPanning) { offsetX += (e.clientX - lastMouseX); offsetY += (e.clientY - lastMouseY); lastMouseX = e.clientX; lastMouseY = e.clientY; draw(); }
+    };
+    window.onmouseup = () => { activePoint = null; isPanning = false; };
+    canvas.oncontextmenu = e => e.preventDefault();
+
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const zoom = e.deltaY > 0 ? 0.9 : 1.1;
+        const mx = e.clientX, my = e.clientY;
+        offsetX = mx - (mx - offsetX) * zoom;
+        offsetY = my - (my - offsetY) * zoom;
+        scale *= zoom;
+        draw();
+    }, { passive: false });
+
+    function resetView() { loadImage(img.src); }
+
+    function copyToExcel() {
+        const r = [document.getElementById('r-hka').innerText, document.getElementById('r-ldfa').innerText, document.getElementById('r-mpta').innerText, document.getElementById('r-jlca').innerText, document.getElementById('r-jloa').innerText];
+        const l = [document.getElementById('l-hka').innerText, document.getElementById('l-ldfa').innerText, document.getElementById('l-mpta').innerText, document.getElementById('l-jlca').innerText, document.getElementById('l-jloa').innerText];
+        const text = `Leg\tHKA\tLDFA\tMPTA\tJLCA\tJLOA\nRight\t${r.join('\t')}\nLeft\t${l.join('\t')}`;
+        navigator.clipboard.writeText(text).then(() => alert("Excel用コピー完了。"));
+    }
+</script>
+</body>
+</html>

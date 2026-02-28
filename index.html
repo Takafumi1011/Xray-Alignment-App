@@ -69,3 +69,163 @@
             { x: w * 0.35, y: h * 0.48, label: 'RKt' }, { x: w * 0.35, y: h * 0.85, label: 'RA' },
             { x: w * 0.40, y: h * 0.46, label: 'RMF' }, { x: w * 0.30, y: h * 0.46, label: 'RLF' },
             { x: w * 0.40, y: h * 0.47, label: 'RMT' }, { x: w * 0.30, y: h * 0.47, label: 'RLT' },
+            { x: w * 0.65, y: h * 0.15, label: 'LH' }, { x: w * 0.65, y: h * 0.45, label: 'LKf' },
+            { x: w * 0.65, y: h * 0.48, label: 'LKt' }, { x: w * 0.65, y: h * 0.85, label: 'LA' },
+            { x: w * 0.60, y: h * 0.46, label: 'LMF' }, { x: w * 0.70, y: h * 0.46, label: 'LLF' },
+            { x: w * 0.60, y: h * 0.47, label: 'LMT' }, { x: w * 0.70, y: h * 0.47, label: 'LLT' }
+        ];
+    }
+
+    window.addEventListener('paste', e => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (let item of items) {
+            if (item.type.indexOf("image") !== -1) {
+                const reader = new FileReader();
+                reader.onload = f => loadImage(f.target.result);
+                reader.readAsDataURL(item.getAsFile());
+            }
+        }
+    });
+
+    document.getElementById('upload').addEventListener('change', e => {
+        if (e.target.files[0]) {
+            const reader = new FileReader();
+            reader.onload = f => loadImage(f.target.result);
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    });
+
+    function loadImage(src) {
+        img = new Image();
+        img.onload = () => {
+            imgLoaded = true;
+            resetView();
+            initPoints();
+            draw();
+        };
+        img.src = src;
+    }
+
+    function resetView() {
+        resizeCanvas();
+        if (imgLoaded) {
+            scale = Math.min(window.innerWidth / img.width, (window.innerHeight - 100) / img.height) * 0.9;
+            offsetX = (window.innerWidth - img.width * scale) / 2;
+            offsetY = (window.innerHeight - img.height * scale) / 2 + 30;
+            draw();
+        }
+    }
+
+    function draw() {
+        if (!imgLoaded) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+        
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+        
+        ctx.lineWidth = 2 / scale;
+        drawLine(points[0], points[1], 'rgba(255,255,255,0.5)'); 
+        [[2, 'r'], [10, 'l']].forEach(([o, side]) => {
+            drawLine(points[o+0], points[o+1], '#FF3B30'); drawLine(points[o+2], points[o+3], '#5856D6'); 
+            drawLine(points[o+4], points[o+5], '#FFCC00'); drawLine(points[o+6], points[o+7], '#34C759'); 
+        });
+
+        points.forEach(p => {
+            ctx.beginPath(); ctx.arc(p.x, p.y, 6 / scale, 0, Math.PI*2);
+            ctx.fillStyle = (p === activePoint) ? '#00FF00' : (p.color || '#FF3B30');
+            ctx.fill();
+            ctx.strokeStyle = "white"; ctx.lineWidth = 1/scale; ctx.stroke();
+        });
+        calculateAngles();
+    }
+
+    function drawLine(p1, p2, color) { ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.strokeStyle = color; ctx.stroke(); }
+
+    function calculateAngles() {
+        const getRad = (p1, p2) => Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        const norm = deg => { while(deg > 180) deg -= 360; while(deg < -180) deg += 360; return deg; };
+        const lineDiff = (a1, a2) => { let d = norm(a1 - a2); if (d > 90) d -= 180; if (d < -90) d += 180; return d; };
+
+        const calc = (o, side) => {
+            const axisF = getRad(points[o+0], points[o+1]);
+            const axisT = getRad(points[o+3], points[o+2]);
+            const jointF = getRad(points[o+5], points[o+4]);
+            const jointT = getRad(points[o+7], points[o+6]);
+            const ground = getRad(points[0], points[1]);
+            const axisKA = getRad(points[o+1], points[o+3]);
+
+            document.getElementById(side+'-hka').innerText = norm((side === 'r' ? (axisKA - axisF) : (axisF - axisKA)) * 180 / Math.PI).toFixed(1);
+            document.getElementById(side+'-ldfa').innerText = Math.abs(norm((side === 'r' ? (axisF - jointF) : (jointF - axisF)) * 180 / Math.PI)).toFixed(1);
+            document.getElementById(side+'-mpta').innerText = (180 - Math.abs(norm((side === 'r' ? (jointT - axisT) : (axisT - jointT)) * 180 / Math.PI))).toFixed(1);
+            let jlca = lineDiff(jointT * 180 / Math.PI, jointF * 180 / Math.PI);
+            document.getElementById(side+'-jlca').innerText = (side === 'r' ? jlca : -jlca).toFixed(1);
+            let jloa = lineDiff(jointT * 180 / Math.PI, ground * 180 / Math.PI);
+            document.getElementById(side+'-jloa').innerText = (side === 'r' ? -jloa : jloa).toFixed(1);
+        };
+        try { calc(2, 'r'); calc(10, 'l'); } catch(e) {}
+    }
+
+    // 操作
+    canvas.onmousedown = e => {
+        const mx = (e.clientX - offsetX) / scale;
+        const my = (e.clientY - offsetY) / scale;
+        activePoint = points.find(p => Math.hypot(p.x - mx, p.y - my) < 20 / scale);
+        if (!activePoint && (e.button === 2 || e.button === 1)) isPanning = true;
+        lastMouseX = e.clientX; lastMouseY = e.clientY;
+    };
+
+    window.onmousemove = e => {
+        if (activePoint) {
+            activePoint.x = (e.clientX - offsetX) / scale;
+            activePoint.y = (e.clientY - offsetY) / scale;
+            draw();
+        } else if (isPanning) {
+            offsetX += (e.clientX - lastMouseX);
+            offsetY += (e.clientY - lastMouseY);
+            lastMouseX = e.clientX; lastMouseY = e.clientY;
+            draw();
+        }
+    };
+
+    window.onmouseup = () => { activePoint = null; isPanning = false; };
+    canvas.oncontextmenu = e => e.preventDefault();
+
+    // ズーム（Mac/PC最適化）
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const zoom = e.deltaY > 0 ? 0.94 : 1.06;
+        const mx = e.clientX, my = e.clientY;
+        offsetX = mx - (mx - offsetX) * zoom;
+        offsetY = my - (my - offsetY) * zoom;
+        scale *= zoom;
+        draw();
+    }, { passive: false });
+
+    function copyToExcel() {
+        const r = [document.getElementById('r-hka').innerText, document.getElementById('r-ldfa').innerText, document.getElementById('r-mpta').innerText, document.getElementById('r-jlca').innerText, document.getElementById('r-jloa').innerText];
+        const l = [document.getElementById('l-hka').innerText, document.getElementById('l-ldfa').innerText, document.getElementById('l-mpta').innerText, document.getElementById('l-jlca').innerText, document.getElementById('l-jloa').innerText];
+        const text = `Leg\tHKA\tLDFA\tMPTA\tJLCA\tJLOA\nRight\t${r.join('\t')}\nLeft\t${l.join('\t')}`;
+        navigator.clipboard.writeText(text).then(() => alert("Excel用データをクリップボードにコピーしました。"));
+    }
+
+    function saveAsCSV() {
+        let c = "Leg,HKA,LDFA,MPTA,JLCA,JLOA\n";
+        ['r','l'].forEach(side => { c += `${side==='r'?'Right':'Left'},${document.getElementById(side+'-hka').innerText},${document.getElementById(side+'-ldfa').innerText},${document.getElementById(side+'-mpta').innerText},${document.getElementById(side+'-jlca').innerText},${document.getElementById(side+'-jloa').innerText}\n`; });
+        const a = document.createElement('a'); a.download = `Xray-Data.csv`; a.href = URL.createObjectURL(new Blob([c], { type: 'text/csv' })); a.click();
+    }
+
+    function resizeCanvas() {
+        dpr = window.devicePixelRatio || 1;
+        canvas.width = window.innerWidth * dpr;
+        canvas.height = window.innerHeight * dpr;
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        if (imgLoaded) draw();
+    }
+    window.onresize = resizeCanvas;
+    resizeCanvas();
+</script>
+</body>
+</html>
